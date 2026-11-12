@@ -1,0 +1,27 @@
+{
+  "name": "wechat-saas",
+  "version": "1.0.0",
+  "description": "邻里团 - 微信生态小程序SaaS（社区团购/会员积分/预约/表单）",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node tests/run.js"
+  },
+  "keywords": [
+    "wechat",
+    "miniprogram",
+    "saas",
+    "community-group-buying",
+    "points"
+  ],
+  "author": "Dtou",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

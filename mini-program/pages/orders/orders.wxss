@@ -1,0 +1,4 @@
+.order { border-bottom:1rpx solid #f3f4f6; padding:20rpx 0; }
+.order-head { display:flex; justify-content:space-between; font-size:24rpx; color:#6b7280; }
+.order-items { margin:12rpx 0; font-size:26rpx; }
+.order-foot { display:flex; justify-content:space-between; align-items:center; }

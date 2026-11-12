@@ -1,0 +1,28 @@
+<view class="container">
+  <view class="banner">
+    <view style="font-size:38rpx;font-weight:700">{{tenantName}}</view>
+    <view style="opacity:.9;margin-top:8rpx">新鲜好物 · 邻里拼团 · 当天下单次日达</view>
+  </view>
+
+  <view class="card" wx:if="{{groupBuys.length}}">
+    <view style="font-weight:700;margin-bottom:16rpx">🔥 正在拼团</view>
+    <view class="gb-item" wx:for="{{groupBuys}}" wx:key="id" bindtap="goGroupBuy" data-id="{{item.id}}">
+      <view style="font-weight:600">{{item.title}}</view>
+      <view class="muted" style="margin:6rpx 0">已拼 {{item.participantCount}} 人 · 还差 {{item.remaining}} 人成团</view>
+      <view><text class="price">¥{{item.groupPriceYuan}}</text> <text class="muted">/ {{item.product.unit}}</text></view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view style="font-weight:700;margin-bottom:8rpx">🛍 全部商品</view>
+    <view class="product-row" wx:for="{{products}}" wx:key="id" bindtap="goProduct" data-id="{{item.id}}">
+      <view class="thumb"></view>
+      <view style="flex:1">
+        <view style="font-weight:600">{{item.name}}</view>
+        <view class="muted" style="margin:6rpx 0">{{item.description}}</view>
+        <view><text class="price">¥{{item.price}}</text> <text class="muted">原价 ¥{{item.originalPrice}}</text></view>
+      </view>
+    </view>
+    <view wx:if="{{!products.length}}" class="empty">暂无商品</view>
+  </view>
+</view>

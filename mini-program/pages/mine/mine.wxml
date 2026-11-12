@@ -1,0 +1,30 @@
+<view class="container">
+  <view class="card" style="display:flex;align-items:center;gap:24rpx">
+    <view class="avatar">😊</view>
+    <view>
+      <view style="font-size:32rpx;font-weight:700">{{member.nickname || '微信用户'}}</view>
+      <view class="muted">会员ID: {{member.id}}</view>
+    </view>
+  </view>
+  <view class="card">
+    <view class="stat-row">
+      <view><view class="stat-num">{{pointsBalance}}</view><view class="muted">积分</view></view>
+      <view><view class="stat-num">{{member.orderCount || 0}}</view><view class="muted">订单</view></view>
+      <view><view class="stat-num">¥{{totalSpent}}</view><view class="muted">累计消费</view></view>
+    </view>
+  </view>
+  <view class="card">
+    <view style="font-weight:700;margin-bottom:12rpx">我的优惠券</view>
+    <view wx:for="{{coupons}}" wx:key="id" style="padding:12rpx 0;border-bottom:1rpx solid #f3f4f6">
+      <text>{{item.name}}</text> <text class="muted">满{{item.threshold}}减{{item.amount}} · {{item.statusText}}</text>
+    </view>
+    <view wx:if="{{!coupons.length}}" class="muted">暂无优惠券，可到活动页领取</view>
+  </view>
+  <view class="card">
+    <view style="font-weight:700;margin-bottom:12rpx">积分明细</view>
+    <view wx:for="{{ledger}}" wx:key="id" style="display:flex;justify-content:space-between;padding:10rpx 0;border-bottom:1rpx solid #f3f4f6">
+      <text>{{item.reason}}</text><text style="color:{{item.change>0?'#07c160':'#ef4444'}}">{{item.change>0?'+':''}}{{item.change}}</text>
+    </view>
+    <view wx:if="{{!ledger.length}}" class="muted">暂无积分记录</view>
+  </view>
+</view>

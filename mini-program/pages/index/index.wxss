@@ -1,0 +1,4 @@
+.banner { background: linear-gradient(135deg,#07c160,#26d07c); color:#fff; border-radius:20rpx; padding:36rpx 28rpx; margin-bottom:20rpx; }
+.product-row { display:flex; gap:20rpx; padding:20rpx 0; border-bottom:1rpx solid #f3f4f6; }
+.product-row image, .thumb { width:140rpx; height:140rpx; border-radius:16rpx; background:#e5e7eb; flex-shrink:0; }
+.gb-item { padding:20rpx; border:1rpx solid #d1fae5; background:#f0fdf4; border-radius:16rpx; margin-bottom:16rpx; }

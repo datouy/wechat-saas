@@ -1,0 +1,71 @@
+/**
+ * 积分系统
+ * - 消费返积分（可配置比例）
+ * - 积分抵扣订单（可配置上限）
+ * - 完整积分流水（收支明细）
+ */
+const { v4: uuidv4 } = require('uuid');
+
+class PointsManager {
+  constructor(store, config) {
+    this.store = store;
+    this.config = config || { enabled: true, ratePerYuan: 1, maxPercentPerOrder: 50 };
+  }
+
+  /** 获取会员积分余额 */
+  getBalance(memberId) {
+    return this.store
+      .find('pointsLedger', p => p.memberId === memberId)
+      .reduce((sum, p) => sum + p.change, 0);
+  }
+
+  /** 变更积分（正为收入，负为支出），返回新余额 */
+  change(memberId, amount, reason, refId) {
+    amount = Math.round(Number(amount) || 0);
+    if (!amount) return this.getBalance(memberId);
+
+    const entry = {
+      id: uuidv4(),
+      memberId,
+      change: amount,
+      reason: reason || '',
+      refId: refId || '',
+      createdAt: new Date().toISOString()
+    };
+    this.store.insert('pointsLedger', entry);
+    return this.getBalance(memberId);
+  }
+
+  /** 支付成功后按金额发放积分 */
+  earnByOrder(memberId, orderId, paidAmount) {
+    if (!this.config.enabled) return 0;
+    const rate = Number(this.config.ratePerYuan) || 0;
+    const earn = Math.floor(Number(paidAmount) * rate);
+    if (earn > 0) this.change(memberId, earn, '消费返积分', orderId);
+    return earn;
+  }
+
+  /** 下单时计算积分抵扣金额 */
+  calcDiscount(memberId, orderAmount, usePoints) {
+    const balance = this.getBalance(memberId);
+    const maxUsableByPercent = Math.floor(orderAmount * (this.config.maxPercentPerOrder / 100));
+    // 1积分=0.01元，且不超过订单金额的可抵扣上限与积分余额
+    const usable = Math.min(Number(usePoints) || 0, balance, maxUsableByPercent * 100);
+    const discount = Math.round(usable) / 100;
+    return {
+      pointsUsed: Math.floor(usable),
+      discount: Math.min(discount, orderAmount),
+      balance
+    };
+  }
+
+  /** 积分流水列表 */
+  getLedger(memberId, limit = 50) {
+    return this.store
+      .find('pointsLedger', p => p.memberId === memberId)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, limit);
+  }
+}
+
+module.exports = PointsManager;
