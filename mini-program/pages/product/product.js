@@ -17,9 +17,7 @@ Page({
   onPoints(e) { this.setData({ usePoints: e.detail.value }); },
   createOrder() {
     var that = this;
-    var mid = api.memberId();
     api.request('/api/wx/orders', 'POST', {
-      memberId: mid,
       items: [{ productId: this.productId, quantity: this.data.qty }],
       options: { usePoints: Number(this.data.usePoints) || 0 }
     }).then(function(order) {
@@ -28,9 +26,26 @@ Page({
         content: '实付 ¥' + (order.payAmount / 100).toFixed(2) + '，是否立即支付？',
         success: function(r) {
           if (r.confirm) {
-            api.request('/api/wx/orders/' + order.id + '/pay', 'POST', { memberId: mid }).then(function(res) {
-              wx.showToast({ title: res.mock ? '模拟支付成功' : '支付成功' });
-              wx.switchTab({ url: '/pages/orders/orders' });
+            api.request('/api/wx/orders/' + order.id + '/pay', 'POST', {}).then(function(res) {
+              if (res.mock) {
+                wx.showToast({ title: '模拟支付成功' });
+                wx.switchTab({ url: '/pages/orders/orders' });
+                return;
+              }
+              wx.requestPayment({
+                timeStamp: res.payParams.timeStamp,
+                nonceStr: res.payParams.nonceStr,
+                package: res.payParams.package,
+                signType: res.payParams.signType,
+                paySign: res.payParams.paySign,
+                success: function() {
+                  wx.showToast({ title: '支付成功' });
+                  wx.switchTab({ url: '/pages/orders/orders' });
+                },
+                fail: function() {
+                  wx.showToast({ title: '支付已取消或失败', icon: 'none' });
+                }
+              });
             }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
           } else {
             wx.switchTab({ url: '/pages/orders/orders' });
