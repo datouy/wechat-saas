@@ -1,10 +1,10 @@
 /**
  * 团购活动管理（社区团购核心）
  * - 创建团购活动（商品+团购价+成团人数+截止时间）
- * - 会员开团/参团
+ * - 会员开团/参团，成团后仍可在截止前继续参团（不超过上限）
  * - 成团进度统计与自动关闭
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
 class GroupBuyManager {
   constructor(store, productManager, config) {
@@ -15,11 +15,9 @@ class GroupBuyManager {
   }
 
   initialize() {
-    // 每分钟检查一次活动截止
     this.timer = setInterval(() => this._autoCloseExpired(), 60000);
   }
 
-  /** 创建团购活动 */
   create(tenantId, data) {
     const product = this.products.get(data.productId);
     if (!product || product.tenantId !== tenantId) throw new Error('商品不存在');
@@ -30,6 +28,7 @@ class GroupBuyManager {
     const now = new Date();
     const endAt = data.endAt ? new Date(data.endAt) :
       new Date(now.getTime() + (Number(data.durationHours) || this.config.autoCloseHours) * 3600000);
+    if (isNaN(endAt.getTime())) throw new Error('活动截止时间无效');
 
     const gb = {
       id: uuidv4(),
@@ -62,11 +61,18 @@ class GroupBuyManager {
     return gb ? this._decorate(gb) : null;
   }
 
-  /** 开团 */
+  /** 判断某会员是否为有效参团者 */
+  hasParticipant(groupBuyId, memberId) {
+    const gb = this.store.findById('groupBuys', groupBuyId);
+    if (!gb) return false;
+    return gb.participants.some(p => p.memberId === memberId);
+  }
+
+  /** 参团：active 或 success 状态下、截止前均可加入 */
   join(groupBuyId, memberId) {
     const gb = this.store.findById('groupBuys', groupBuyId);
     if (!gb) throw new Error('团购活动不存在');
-    if (gb.status !== 'active') throw new Error('活动已结束');
+    if (gb.status === 'cancelled' || gb.status === 'closed') throw new Error('活动已结束');
     if (new Date(gb.endAt).getTime() < Date.now()) {
       gb.status = 'closed';
       this.store.markDirty('groupBuys');
@@ -85,7 +91,7 @@ class GroupBuyManager {
 
     if (gb.participants.length >= gb.minParticipants) {
       gb.status = 'success';
-      gb.successAt = new Date().toISOString();
+      gb.successAt = gb.successAt || new Date().toISOString();
     }
     this.store.markDirty('groupBuys');
     return this._decorate(gb);
@@ -94,6 +100,7 @@ class GroupBuyManager {
   cancel(id) {
     const gb = this.store.findById('groupBuys', id);
     if (!gb) throw new Error('团购活动不存在');
+    if (gb.status === 'cancelled') return gb;
     gb.status = 'cancelled';
     this.store.markDirty('groupBuys');
     return gb;
@@ -127,3 +134,4 @@ class GroupBuyManager {
 }
 
 module.exports = GroupBuyManager;
+

@@ -136,7 +136,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || '断言失败'); 
     const g = gbm.join(gb.id, member.id);
     assert(g.participantCount === 1 && g.remaining === 1);
   });
-  test('第二人参团成团', async () => {
+  await testAsync('第二人参团成团', async () => {
     const m2 = await mm.loginByWechatCode('test-code-456', tenant);
     const g = gbm.join(gb.id, m2.id);
     assert(g.status === 'success');
