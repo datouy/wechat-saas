@@ -4,26 +4,39 @@ App({
   globalData: {
     baseUrl: 'http://localhost:3100',
     memberId: '',
-    userInfo: null
+    token: '',
+    userInfo: null,
+    loginReady: null
   },
   onLaunch() {
     var that = this;
-    // 自动登录（mock模式本地即可跑通）
-    wx.login({
-      success(res) {
-        if (!res.code) return;
-        wx.request({
-          url: that.globalData.baseUrl + '/api/wx/login',
-          method: 'POST',
-          data: { code: res.code },
-          success(r) {
-            if (r.data && r.data.success) {
-              that.globalData.memberId = r.data.data.memberId;
-              wx.setStorageSync('memberId', r.data.data.memberId);
-            }
-          }
-        });
-      }
+    // 自动登录；后续业务请求通过 loginReady 等待登录完成
+    that.globalData.loginReady = new Promise(function(resolve) {
+      wx.login({
+        success(res) {
+          if (!res.code) return resolve(null);
+          wx.request({
+            url: that.globalData.baseUrl + '/api/wx/login',
+            method: 'POST',
+            data: { code: res.code },
+            success(r) {
+              if (r.data && r.data.success && r.data.data && r.data.data.token) {
+                var d = r.data.data;
+                that.globalData.memberId = d.memberId;
+                that.globalData.token = d.token;
+                wx.setStorageSync('memberId', d.memberId);
+                wx.setStorageSync('token', d.token);
+                resolve(d.token);
+              } else {
+                resolve(null);
+              }
+            },
+            fail() { resolve(null); }
+          });
+        },
+        fail() { resolve(null); }
+      });
     });
   }
 });
+
