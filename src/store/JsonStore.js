@@ -1,8 +1,8 @@
 /**
- * JSON文件存储层
- * - 纯JS实现，无需原生编译（对比 better-sqlite3 更易部署）
- * - 每个集合一个JSON文件，写入自动防抖持久化
- * - 适合单机/小规模SaaS商用起步；后续可平滑替换为 MySQL/PG
+ * JSON文件存储层（本地开发用）
+ * - 每个集合一个JSON文件，写入采用“临时文件 + fsync + rename”原子替换
+ * - 加载失败直接报错，避免把损坏文件静默当成空数据
+ * - 写入失败保留脏标记，不静默丢弃未持久化数据
  */
 const fs = require('fs');
 const path = require('path');
@@ -10,13 +10,12 @@ const path = require('path');
 class JsonStore {
   constructor(dataDir) {
     this.dataDir = path.resolve(dataDir || './data');
-    this.collections = new Map(); // name -> array
+    this.collections = new Map();
     this.dirty = new Set();
     this.saveTimer = null;
     if (!fs.existsSync(this.dataDir)) fs.mkdirSync(this.dataDir, { recursive: true });
   }
 
-  /** 初始化：加载所有集合 */
   initialize() {
     for (const name of this._listFiles()) {
       this.load(name);
@@ -33,45 +32,45 @@ class JsonStore {
     } catch (e) { return []; }
   }
 
-  /** 加载集合 */
   load(name) {
     const file = path.join(this.dataDir, name + '.json');
+    if (!fs.existsSync(file)) {
+      this.collections.set(name, []);
+      return this.collections.get(name);
+    }
+    const raw = fs.readFileSync(file, 'utf8');
+    if (!raw || raw.trim() === '') {
+      this.collections.set(name, []);
+      return this.collections.get(name);
+    }
+    let parsed;
     try {
-      if (fs.existsSync(file)) {
-        const raw = fs.readFileSync(file, 'utf8');
-        this.collections.set(name, JSON.parse(raw));
-      } else {
-        this.collections.set(name, []);
-      }
+      parsed = JSON.parse(raw);
     } catch (e) {
-      console.warn('[JsonStore] 加载集合失败 ' + name + ': ' + e.message);
-      this.collections.set(name, []);
+      throw new Error('[JsonStore] 集合 ' + name + ' 数据文件损坏，拒绝启动以避免覆盖数据: ' + e.message);
     }
-    return this.collections.get(name);
+    if (!Array.isArray(parsed)) {
+      throw new Error('[JsonStore] 集合 ' + name + ' 数据格式错误（应为数组）');
+    }
+    this.collections.set(name, parsed);
+    return parsed;
   }
 
-  /** 获取集合（不存在则创建空集合） */
   collection(name) {
-    if (!this.collections.has(name)) {
-      this.collections.set(name, []);
-    }
+    if (!this.collections.has(name)) this.collections.set(name, []);
     return this.collections.get(name);
   }
 
-  /** 插入一条记录 */
   insert(name, doc) {
-    const arr = this.collection(name);
-    arr.push(doc);
+    this.collection(name).push(doc);
     this.markDirty(name);
     return doc;
   }
 
-  /** 按ID查找 */
   findById(name, id) {
     return this.collection(name).find(d => d.id === id) || null;
   }
 
-  /** 更新记录（浅合并） */
   update(name, id, patch) {
     const doc = this.findById(name, id);
     if (!doc) return null;
@@ -80,7 +79,6 @@ class JsonStore {
     return doc;
   }
 
-  /** 删除记录 */
   remove(name, id) {
     const arr = this.collection(name);
     const idx = arr.findIndex(d => d.id === id);
@@ -90,17 +88,14 @@ class JsonStore {
     return true;
   }
 
-  /** 条件查询 */
   find(name, predicate) {
     return this.collection(name).filter(predicate || (() => true));
   }
 
-  /** 统计数量 */
   count(name, predicate) {
     return this.collection(name).filter(predicate || (() => true)).length;
   }
 
-  /** 标记脏集合，防抖保存 */
   markDirty(name) {
     this.dirty.add(name);
     if (this.saveTimer) return;
@@ -110,24 +105,45 @@ class JsonStore {
     }, 300);
   }
 
-  /** 立即落盘 */
-  flush() {
-    for (const name of this.dirty) {
-      try {
-        const file = path.join(this.dataDir, name + '.json');
-        fs.writeFileSync(file, JSON.stringify(this.collection(name), null, 1), 'utf8');
-      } catch (e) {
-        console.error('[JsonStore] 保存失败 ' + name + ': ' + e.message);
-      }
+  /** 原子写入单个集合 */
+  _write(name) {
+    const file = path.join(this.dataDir, name + '.json');
+    const tmp = file + '.tmp';
+    const data = JSON.stringify(this.collection(name), null, 1);
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeSync(fd, data, null, 'utf8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
     }
-    this.dirty.clear();
+    fs.renameSync(tmp, file);
   }
 
-  /** 关闭 */
+  /** 立即落盘；返回失败的集合列表（不再丢失脏标记） */
+  flush() {
+    const failed = [];
+    for (const name of [...this.dirty]) {
+      try {
+        this._write(name);
+        this.dirty.delete(name);
+      } catch (e) {
+        console.error('[JsonStore] 保存失败 ' + name + ': ' + e.message);
+        failed.push(name);
+      }
+    }
+    return failed;
+  }
+
   shutdown() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.flush();
+    this.saveTimer = null;
+    const failed = this.flush();
+    if (failed.length) {
+      console.error('[JsonStore] 关闭时仍有集合未持久化: ' + failed.join(', '));
+    }
   }
 }
 
 module.exports = JsonStore;
+

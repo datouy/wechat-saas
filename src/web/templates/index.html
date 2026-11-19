@@ -62,6 +62,13 @@ textarea{min-height:70px;resize:vertical}
 .toast.hide{opacity:0;transform:translateY(-8px)}
 .toast.err{background:var(--danger)}
 @media(max-width:900px){.sidebar{display:none}.main{margin-left:0;padding:0 14px 30px}}
+
+.login-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200}
+.login-card{background:var(--card);padding:28px;border-radius:16px;width:320px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.login-card h2{margin:0 0 16px;font-size:20px}
+.login-card input{margin-bottom:12px}
+.login-card .err{color:var(--danger);font-size:12.5px;min-height:16px;margin-bottom:6px}
+.hidden{display:none}
 </style>
 </head>
 <body>
@@ -210,19 +217,47 @@ textarea{min-height:70px;resize:vertical}
   </section>
 </main>
 </div>
+
+<div class="login-overlay hidden" id="loginOverlay">
+  <div class="login-card">
+    <h2>邻里团管理后台</h2>
+    <input id="loginUser" placeholder="用户名" value="admin">
+    <input id="loginPass" type="password" placeholder="密码">
+    <div class="err" id="loginErr"></div>
+    <button class="btn" style="width:100%" onclick="doLogin()">登录</button>
+  </div>
+</div>
 <script>
 var state = { page: 'dashboard', products: [], categories: [], groupBuys: [], orders: [], members: [], coupons: [], forms: [], services: [], appointments: [] };
 
 function api(path, options) {
   options = options || {};
+  var headers = { 'Content-Type': 'application/json' };
+  var token = localStorage.getItem('lt-admin-token');
+  if (token) headers['Authorization'] = 'Bearer ' + token;
   return fetch(path, {
     method: options.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: headers,
     body: options.body ? JSON.stringify(options.body) : undefined
-  }).then(function(r){ return r.json(); }).then(function(j){
+  }).then(function(r){
+    if (r.status === 401) { localStorage.removeItem('lt-admin-token'); showLogin(); throw new Error('登录已过期'); }
+    return r.json();
+  }).then(function(j){
     if (!j.success) throw new Error(j.error || '请求失败');
     return j.data;
   });
+}
+function showLogin(){ document.getElementById('loginOverlay').classList.remove('hidden'); }
+function hideLogin(){ document.getElementById('loginOverlay').classList.add('hidden'); }
+function doLogin(){
+  var u = document.getElementById('loginUser').value.trim();
+  var p = document.getElementById('loginPass').value;
+  var err = document.getElementById('loginErr');
+  err.textContent = '';
+  fetch('/api/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username:u, password:p }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if(!j.success) throw new Error(j.error || '登录失败'); localStorage.setItem('lt-admin-token', j.data.token); hideLogin(); loadAll(); })
+    .catch(function(e){ err.textContent = e.message; });
 }
 function toast(msg, isErr) {
   var t = document.createElement('div');
@@ -232,6 +267,7 @@ function toast(msg, isErr) {
   setTimeout(function(){ t.classList.add('hide'); setTimeout(function(){ t.remove(); }, 300); }, 2200);
 }
 function money(fen) { return '¥' + (fen / 100).toFixed(2); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; }); }
 
 document.addEventListener('DOMContentLoaded', function(){
   // 导航
@@ -265,7 +301,7 @@ document.addEventListener('DOMContentLoaded', function(){
     if (act === 'view-form-stats') viewFormStats(btn.getAttribute('data-id'));
     if (act === 'go-page') go(btn.getAttribute('data-page'));
   });
-  loadAll();
+  if (localStorage.getItem('lt-admin-token')) { loadAll(); } else { showLogin(); }
 });
 
 function go(p) {
@@ -291,9 +327,10 @@ function loadAll() {
     api('/api/admin/system')
   ]).then(function(r){
     var stats = r[0];
-    state.categories = r[1]; state.products = r[2]; state.groupBuys = r[3];
-    state.orders = r[4]; state.members = r[5]; state.coupons = r[6];
-    state.forms = r[7]; state.services = r[8]; state.appointments = r[9];
+    var arr = function(x){ return Array.isArray(x) ? x : ((x && x.list) || []); };
+    state.categories = arr(r[1]); state.products = arr(r[2]); state.groupBuys = arr(r[3]);
+    state.orders = arr(r[4]); state.members = arr(r[5]); state.coupons = arr(r[6]);
+    state.forms = arr(r[7]); state.services = arr(r[8]); state.appointments = arr(r[9]);
     state.system = r[10];
     renderDashboard(stats);
     renderProducts();
@@ -312,9 +349,9 @@ function loadAll() {
 }
 
 function fillSelects() {
-  var catHtml = state.categories.map(function(c){ return '<option value="' + c.id + '">' + c.name + '</option>'; }).join('');
+  var catHtml = state.categories.map(function(c){ return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }).join('');
   document.getElementById('pCategory').innerHTML = catHtml;
-  var pHtml = state.products.map(function(p){ return '<option value="' + p.id + '">' + p.name + ' (' + money(Math.round(p.price * 100)) + ')</option>'; }).join('');
+  var pHtml = state.products.map(function(p){ return '<option value="' + p.id + '">' + esc(p.name) + ' (' + money(Math.round(p.price * 100)) + ')</option>'; }).join('');
   document.getElementById('gbProduct').innerHTML = pHtml;
 }
 
@@ -344,14 +381,14 @@ function renderDashboard(s) {
     document.getElementById('topProducts').innerHTML = '<div class="empty">暂无成交数据，下单后这里会显示热销商品</div>';
   } else {
     document.getElementById('topProducts').innerHTML = s.topProducts.map(function(p, i){
-      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span>' + (i+1) + '. ' + p.name + '</span><span style="color:var(--sub)">' + p.qty + ' 件 · ¥' + p.amount.toFixed(2) + '</span></div>';
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)"><span>' + (i+1) + '. ' + esc(p.name) + '</span><span style="color:var(--sub)">' + p.qty + ' 件 · ¥' + p.amount.toFixed(2) + '</span></div>';
     }).join('');
   }
 }
 
 function renderProducts() {
   var rows = state.products.map(function(p){
-    return '<tr><td><strong>' + p.name + '</strong><div style="color:var(--sub);font-size:12px">' + (p.description || '') + '</div></td>' +
+    return '<tr><td><strong>' + esc(p.name) + '</strong><div style="color:var(--sub);font-size:12px">' + esc(p.description || '') + '</div></td>' +
       '<td>¥' + p.price.toFixed(2) + '</td><td>' + p.stock + '</td><td>' + p.sales + '</td>' +
       '<td>' + (p.onSale ? '<span class="tag green">在售</span>' : '<span class="tag gray">下架</span>') + '</td>' +
       '<td><button class="btn sm ghost" data-act="toggle-product" data-id="' + p.id + '">' + (p.onSale ? '下架' : '上架') + '</button> ' +
@@ -364,7 +401,7 @@ function renderGroupBuys() {
   var rows = state.groupBuys.map(function(g){
     var pct = Math.min(100, Math.round((g.participantCount / g.minParticipants) * 100));
     var statusTag = { active:'<span class="tag blue">进行中</span>', success:'<span class="tag green">已成团</span>', closed:'<span class="tag gray">已结束</span>', cancelled:'<span class="tag red">已取消</span>' }[g.status] || g.status;
-    return '<tr><td><strong>' + g.title + '</strong><div style="color:var(--sub);font-size:12px">' + (g.product ? g.product.name : '') + '</div></td>' +
+    return '<tr><td><strong>' + esc(g.title) + '</strong><div style="color:var(--sub);font-size:12px">' + esc(g.product ? g.product.name : '') + '</div></td>' +
       '<td>¥' + (g.groupPrice / 100).toFixed(2) + '</td><td>' + g.participantCount + '/' + g.minParticipants + '<div class="progress" style="margin-top:6px"><div style="width:' + pct + '%"></div></div></td>' +
       '<td>' + statusTag + '</td><td>' + new Date(g.endAt).toLocaleString() + '</td>' +
       '<td>' + (g.status === 'active' ? '<button class="btn sm danger" data-act="cancel-groupbuy" data-id="' + g.id + '">取消</button>' : '-') + '</td></tr>';
@@ -377,8 +414,8 @@ function renderOrders(filter) {
   if (filter) list = list.filter(function(o){ return o.status === filter; });
   var statusMap = { pending:'<span class="tag amber">待支付</span>', paid:'<span class="tag blue">待发货</span>', delivering:'<span class="tag blue">配送中</span>', completed:'<span class="tag green">已完成</span>', cancelled:'<span class="tag red">已取消</span>' };
   var rows = list.map(function(o){
-    var itemStr = o.items.map(function(it){ return it.name + '×' + it.quantity; }).join('、');
-    return '<tr><td>' + o.orderNo + '</td><td style="max-width:260px">' + itemStr + '</td><td><strong>' + money(o.payAmount) + '</strong></td>' +
+    var itemStr = o.items.map(function(it){ return esc(it.name) + '×' + it.quantity; }).join('、');
+    return '<tr><td>' + esc(o.orderNo) + '</td><td style="max-width:260px">' + itemStr + '</td><td><strong>' + money(o.payAmount) + '</strong></td>' +
       '<td>' + (statusMap[o.status] || o.status) + '</td><td>' + new Date(o.createdAt).toLocaleString() + '</td>' +
       '<td>' + (o.status === 'paid' ? '<button class="btn sm" data-act="deliver-order" data-id="' + o.id + '">发货</button>' : '-') + '</td></tr>';
   }).join('');
@@ -387,34 +424,34 @@ function renderOrders(filter) {
 
 function renderMembers() {
   var rows = state.members.map(function(m){
-    return '<tr><td>' + m.nickname + '</td><td>' + (m.phone || '-') + '</td><td>¥' + (m.totalSpent || 0).toFixed(2) + '</td><td>' + (m.orderCount || 0) + '</td><td>' + new Date(m.createdAt).toLocaleDateString() + '</td></tr>';
+    return '<tr><td>' + esc(m.nickname) + '</td><td>' + esc(m.phone || '-') + '</td><td>¥' + (m.totalSpent || 0).toFixed(2) + '</td><td>' + (m.orderCount || 0) + '</td><td>' + new Date(m.createdAt).toLocaleDateString() + '</td></tr>';
   }).join('');
   document.getElementById('memberTable').innerHTML = '<tr><th>昵称</th><th>手机号</th><th>累计消费</th><th>订单数</th><th>注册时间</th></tr>' + (rows || '<tr><td colspan="5" class="empty">暂无会员</td></tr>');
 }
 
 function renderCoupons() {
   var rows = state.coupons.map(function(c){
-    return '<tr><td><strong>' + c.name + '</strong></td><td>满' + c.threshold + '元</td><td>减' + c.amount + '元</td><td>' + c.validDays + '天</td><td>每人限' + c.limitPerMember + '张</td><td>' + (c.enabled ? '<span class="tag green">启用</span>' : '<span class="tag gray">停用</span>') + '</td></tr>';
+    return '<tr><td><strong>' + esc(c.name) + '</strong></td><td>满' + c.threshold + '元</td><td>减' + c.amount + '元</td><td>' + c.validDays + '天</td><td>每人限' + c.limitPerMember + '张</td><td>' + (c.enabled ? '<span class="tag green">启用</span>' : '<span class="tag gray">停用</span>') + '</td></tr>';
   }).join('');
   document.getElementById('couponTable').innerHTML = '<tr><th>名称</th><th>门槛</th><th>优惠</th><th>有效期</th><th>限领</th><th>状态</th></tr>' + (rows || '<tr><td colspan="6" class="empty">暂无优惠券</td></tr>');
 }
 
 function renderForms() {
   var rows = state.forms.map(function(f){
-    return '<tr><td><strong>' + f.title + '</strong><div style="color:var(--sub);font-size:12px">' + (f.description || '') + '</div></td><td>' + f.fields.length + ' 个问题</td><td>' + (f.status === 'open' ? '<span class="tag green">收集中</span>' : '<span class="tag gray">已关闭</span>') + '</td><td><button class="btn sm ghost" data-act="view-form-stats" data-id="' + f.id + '">查看统计</button></td></tr>';
+    return '<tr><td><strong>' + esc(f.title) + '</strong><div style="color:var(--sub);font-size:12px">' + esc(f.description || '') + '</div></td><td>' + f.fields.length + ' 个问题</td><td>' + (f.status === 'open' ? '<span class="tag green">收集中</span>' : '<span class="tag gray">已关闭</span>') + '</td><td><button class="btn sm ghost" data-act="view-form-stats" data-id="' + f.id + '">查看统计</button></td></tr>';
   }).join('');
   document.getElementById('formTable').innerHTML = '<tr><th>问卷</th><th>题数</th><th>状态</th><th>操作</th></tr>' + (rows || '<tr><td colspan="4" class="empty">暂无问卷</td></tr>');
 }
 
 function renderAppointments() {
   var srows = state.services.map(function(s){
-    return '<tr><td><strong>' + s.name + '</strong></td><td>¥' + s.price.toFixed(2) + '</td><td>' + s.durationMinutes + ' 分钟</td><td>' + s.slots.join('、') + '</td><td>' + s.capacityPerSlot + ' 人/时段</td></tr>';
+    return '<tr><td><strong>' + esc(s.name) + '</strong></td><td>¥' + s.price.toFixed(2) + '</td><td>' + s.durationMinutes + ' 分钟</td><td>' + esc(s.slots.join('、')) + '</td><td>' + s.capacityPerSlot + ' 人/时段</td></tr>';
   }).join('');
   document.getElementById('serviceTable').innerHTML = '<tr><th>服务</th><th>价格</th><th>时长</th><th>可约时段</th><th>容量</th></tr>' + (srows || '<tr><td colspan="5" class="empty">暂无服务</td></tr>');
 
   var arows = state.appointments.map(function(a){
     var st = { booked:'<span class="tag blue">已预约</span>', completed:'<span class="tag green">已完成</span>', cancelled:'<span class="tag gray">已取消</span>' }[a.status] || a.status;
-    return '<tr><td>' + a.serviceName + '</td><td>' + a.date + ' ' + a.slot + '</td><td>' + st + '</td><td>' + (a.note || '-') + '</td></tr>';
+    return '<tr><td>' + esc(a.serviceName) + '</td><td>' + esc(a.date) + ' ' + esc(a.slot) + '</td><td>' + st + '</td><td>' + esc(a.note || '-') + '</td></tr>';
   }).join('');
   document.getElementById('apptTable').innerHTML = '<tr><th>服务</th><th>时间</th><th>状态</th><th>备注</th></tr>' + (arows || '<tr><td colspan="4" class="empty">暂无预约记录</td></tr>');
 }
@@ -422,11 +459,11 @@ function renderAppointments() {
 function renderSettings() {
   var s = state.system || {};
   document.getElementById('sysInfo').innerHTML =
-    '<div class="form-grid"><div class="field"><label>系统名称</label><div>' + s.name + '</div></div>' +
+    '<div class="form-grid"><div class="field"><label>系统名称</label><div>' + esc(s.name) + '</div></div>' +
     '<div class="field"><label>版本</label><div>v' + s.version + '</div></div>' +
     '<div class="field"><label>Node版本</label><div>' + s.nodeVersion + '</div></div>' +
     '<div class="field"><label>运行时长</label><div>' + Math.round(s.uptime) + ' 秒</div></div>' +
-    '<div class="field"><label>商户ID</label><div>' + s.tenantId + '</div></div>' +
+    '<div class="field"><label>商户ID</label><div>' + esc(s.tenantId) + '</div></div>' +
     '<div class="field"><label>微信模式</label><div>' + (s.wechatMock ? '模拟模式（本地联调）' : '正式对接') + '</div></div></div>';
   document.getElementById('wxHelp').innerHTML =
     '<div style="line-height:1.9;font-size:13.5px;color:var(--sub)">' +
@@ -523,10 +560,10 @@ function viewFormStats(id) {
     document.getElementById('formStatsPanel').style.display = 'block';
     var html = '<div style="margin-bottom:12px;color:var(--sub)">共收到 <b style="color:var(--text)">' + s.total + '</b> 份提交</div>';
     s.fields.forEach(function(f){
-      html += '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div style="font-weight:600;margin-bottom:6px">' + f.label + '</div>';
+      html += '<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div style="font-weight:600;margin-bottom:6px">' + esc(f.label) + '</div>';
       if (Object.keys(f.distribution).length) {
         Object.keys(f.distribution).forEach(function(k){
-          html += '<div style="font-size:13px;color:var(--sub)">' + k + '：' + f.distribution[k] + ' 次</div>';
+          html += '<div style="font-size:13px;color:var(--sub)">' + esc(k) + '：' + esc(f.distribution[k]) + ' 次</div>';
         });
       } else if (f.average !== null) {
         html += '<div style="font-size:13px;color:var(--sub)">平均分：' + f.average + '</div>';
