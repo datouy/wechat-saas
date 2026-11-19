@@ -4,13 +4,15 @@
  * - 热销商品 Top5
  * - 近7日销售趋势
  */
+const { cnDate } = require('./time');
+
 class StatsService {
   constructor(store) { this.store = store; }
 
   dashboard(tenantId) {
     const orders = this.store.find('orders', o => o.tenantId === tenantId);
     const members = this.store.find('members', m => m.tenantId === tenantId);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = cnDate();
 
     const paidOrders = orders.filter(o => ['paid', 'delivering', 'completed'].includes(o.status));
     const todayPaid = paidOrders.filter(o => (o.paidAt || '').startsWith(today));
@@ -34,7 +36,7 @@ class StatsService {
     // 近7日趋势
     const trend = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      const d = cnDate(new Date(Date.now() - i * 86400000));
       const dayOrders = paidOrders.filter(o => (o.paidAt || '').startsWith(d));
       trend.push({ date: d, orders: dayOrders.length, amount: sum(dayOrders) });
     }

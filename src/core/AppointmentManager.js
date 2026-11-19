@@ -4,7 +4,8 @@
  * - 时间段容量管理
  * - 会员预约/取消，防重复占位
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
+const { cnDate } = require('./time');
 
 class AppointmentManager {
   constructor(store) { this.store = store; }
@@ -50,7 +51,7 @@ class AppointmentManager {
     if (!svc || !svc.enabled) throw new Error('服务不可预约');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new Error('日期格式需为 YYYY-MM-DD');
     if (!svc.slots.includes(slot)) throw new Error('时段无效');
-    if (date < new Date().toISOString().slice(0, 10)) throw new Error('不能预约过去的日期');
+    if (date < cnDate()) throw new Error('不能预约过去的日期');
 
     const dup = this.store.find('appointments',
       a => a.serviceId === serviceId && a.memberId === memberId && a.date === date && a.slot === slot && a.status === 'booked');
