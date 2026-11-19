@@ -6,7 +6,11 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "test:http": "node tests/http-auth.js",
+    "test:pay": "node tests/wechatpay-v3.js",
+    "test:validation": "node tests/http-validation.js",
+    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation"
   },
   "keywords": [
     "wechat",
@@ -18,8 +22,11 @@
   "author": "Dtou",
   "license": "MIT",
   "dependencies": {
+    "dotenv": "^18.0.10",
     "express": "^4.18.2",
-    "uuid": "^9.0.0"
+    "express-rate-limit": "^8.7.5",
+    "helmet": "^8.3.0",
+    "zod": "^4.6.7"
   },
   "engines": {
     "node": ">=18.0.0"
