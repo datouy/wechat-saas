@@ -1,0 +1,47 @@
+# 邻里团 SaaS 本地/单机部署编排
+# 当前版本使用 JSON 持久化（挂载 data 卷）；PostgreSQL 迁移见 db/migrations/001_init.sql
+services:
+  app:
+    build: .
+    container_name: wechat-saas
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    environment:
+      NODE_ENV: production
+      PORT: "3100"
+      HOST: "0.0.0.0"
+      DATA_DIR: "/app/data"
+      # 生产环境必填（否则启动失败）
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      WX_MOCK: "false"
+      WX_APPID: ${WX_APPID:-}
+      WX_SECRET: ${WX_SECRET:-}
+      WX_MCHID: ${WX_MCHID:-}
+      WX_PAY_KEY: ${WX_PAY_KEY:-}
+      WX_PAY_PRIVATE_KEY: ${WX_PAY_PRIVATE_KEY:-}
+      WX_PAY_SERIAL_NO: ${WX_PAY_SERIAL_NO:-}
+      WX_NOTIFY_URL: ${WX_NOTIFY_URL:-}
+      WX_PAY_PLATFORM_CERTS: ${WX_PAY_PLATFORM_CERTS:-}
+    volumes:
+      - ./data:/app/data
+    # 可选：接入 PostgreSQL 后再启用
+    # depends_on:
+    #   - postgres
+  # postgres:
+  #   image: postgres:16-alpine
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_DB: wechat_saas
+  #     POSTGRES_USER: wechat
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wechat}
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U wechat -d wechat_saas"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+# volumes:
+#   pgdata:

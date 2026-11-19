@@ -27,6 +27,8 @@ npm start
 
 打开 http://localhost:3100 进入**商家管理后台**。首次启动会自动生成演示数据（6个商品、2个团购、2张优惠券、1个问卷、2个预约服务、1个演示会员）。
 
+管理后台默认账号：**admin / admin123**（仅本地开发默认；生产环境请在 .env 中修改 ADMIN_PASSWORD）。
+
 默认 **微信模拟模式**：小程序登录、支付在本地直接模拟成功，可完整走通"下单→支付→发货→收货"流程。
 
 ### 小程序端
@@ -56,12 +58,18 @@ wechat-saas/
 │   │   ├── AppointmentManager.js
 │   │   ├── StatsService.js
 │   │   └── seed.js
-│   ├── services/WechatService.js  # 微信登录/支付（mock+真实）
+│   ├── services/WechatService.js  # 微信登录/支付v3（mock+真实）
+│   ├── auth/                 # 令牌签发/口令哈希/管理员账号
+│   ├── errors.js / validation.js / logger.js  # 错误码/Zod校验/结构化日志
+│   ├── core/AuditLog.js      # 操作审计日志
 │   ├── api/ApiService.js      # 小程序API + 管理后台API
 │   └── web/templates/index.html   # 管理后台界面
 ├── mini-program/              # 微信小程序源码（开发者工具可直接导入）
 ├── tests/run.js               # 自动化测试
 ├── docs/微信上线清单.md        # 上线配置指南
+├── docs/数据库迁移.md          # JSON→PostgreSQL 迁移方案
+├── db/migrations/001_init.sql  # PostgreSQL 企业版 Schema
+├── Dockerfile / docker-compose.yml / scripts/backup.js  # 部署与备份
 └── data/                      # 运行期数据（JSON文件）
 ```
 
@@ -106,16 +114,40 @@ wechat-saas/
 ## ✅ 测试
 
 ```bash
-npm test
+npm run test:all
 ```
 
-覆盖：下单→支付→发货→收货全链路、积分抵扣、优惠券核销、库存回滚、团购成团、问卷提交、预约占位。
+- `npm test`：核心业务全链路（28 项）
+- `npm run test:http`：会员/管理员令牌、越权访问、租户隔离（12 项）
+- `npm run test:pay`：微信支付 v3 RSA 签名 / 回调验签 / AES-GCM 解密（4 项）
+- `npm run test:validation`：参数校验、分页、安全头、审计日志（11 项）
+
+## 🚀 部署
+
+```bash
+docker compose up -d --build
+```
+
+- `Dockerfile`：node:20-alpine 非 root 运行，内置 `/healthz` 健康检查
+- `docker-compose.yml`：挂载 `./data` 持久化数据（PostgreSQL 迁移预留，见 `db/migrations/001_init.sql`）
+- `scripts/backup.js`：JSON 数据快照备份
+- `.github/workflows/ci.yml`：CI 跑测试 + npm audit
+
+## ✅ 已完成的企业级加固
+
+- **鉴权**：HMAC 签名令牌（会员/管理员两类）、scrypt 口令哈希、租户由令牌推导，不再信任客户端自报身份
+- **微信支付 v3**：RSA-SHA256 下单签名、回调验签 + AES-256-GCM 解密、金额/商户号/AppID 校验、退款，小程序 `wx.requestPayment`
+- **交易一致性**：库存「可用+预留」语义（下单扣可用、支付后记销量）、优惠券 reserved/used/released、成团后仍可参团、已支付订单需走退款
+- **参数校验**：Zod 入口校验，统一错误码 + requestId
+- **存储**：JSON 原子写入（临时文件+fsync+rename）、损坏 fail-fast、写失败保留脏标记
+- **安全**：Helmet、登录/全局限流、管理后台存储型 XSS 转义、CORS 白名单预留
+- **分页/审计**：管理端列表分页、操作审计日志
 
 ## ⚠️ 当前边界
 
-- 数据存储为JSON文件，适合单机和小规模使用（<1万订单）；规模增长后请迁移数据库
-- 真实微信支付需要商户API证书与v3签名实现（见上线清单）
-- 多商户目前通过 `X-Tenant-Id` 请求头隔离，管理端鉴权/登录体系待阶段3补充
+- 数据存储为 JSON 文件（已原子写入），适合单机和小规模使用（<1万订单）；规模增长后请迁移 PostgreSQL（见 `docs/数据库迁移.md`）
+- 真实微信支付 v3 已实现，但需要真实商户证书/APIv3 密钥/平台证书才能端到端联调（本地用生成的 RSA 密钥验证了加解密往返）
+- 公开目录（首页/商品/团购/问卷列表）仍使用 `X-Tenant-Id` 标识商户；敏感身份与写操作均需令牌鉴权
 
 ## License
 

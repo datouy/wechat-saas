@@ -1,0 +1,11 @@
+node_modules
+data
+.env
+.git
+.gitignore
+tests
+work
+docs
+mini-program
+*.md
+npm-debug.log
