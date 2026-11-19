@@ -4,7 +4,7 @@
  * - 会员资料、收货地址
  * - 消费统计（累计消费/订单数）
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
 class MemberManager {
   constructor(store, wechatService) {

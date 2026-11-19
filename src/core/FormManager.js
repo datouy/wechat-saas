@@ -4,7 +4,7 @@
  * - 会员提交问卷
  * - 统计结果（各选项分布）
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
 class FormManager {
   constructor(store) { this.store = store; }

@@ -4,7 +4,7 @@
  * - 积分抵扣订单（可配置上限）
  * - 完整积分流水（收支明细）
  */
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('crypto');
 
 class PointsManager {
   constructor(store, config) {
