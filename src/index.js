@@ -1,12 +1,19 @@
+require('dotenv').config();
 /**
  * 邻里团 SaaS - 微信小程序SaaS服务入口
  * 组合: Express + JSON存储 + 微信双模式(mock/真实)
  */
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const config = require('../config/default');
+const Logger = require('./logger');
 
 const JsonStore = require('./store/JsonStore');
+const AuthService = require('./auth/AuthService');
+const AdminService = require('./auth/AdminService');
 const MemberManager = require('./core/MemberManager');
 const PointsManager = require('./core/PointsManager');
 const CouponManager = require('./core/CouponManager');
@@ -16,23 +23,65 @@ const OrderManager = require('./core/OrderManager');
 const FormManager = require('./core/FormManager');
 const AppointmentManager = require('./core/AppointmentManager');
 const StatsService = require('./core/StatsService');
+const AuditLog = require('./core/AuditLog');
 const WechatService = require('./services/WechatService');
 const ApiService = require('./api/ApiService');
 const seed = require('./core/seed');
 
 class WechatSaas {
   constructor() {
+    if (config.env !== 'production' && !config.auth.secret) {
+      config.auth.secret = 'dev-insecure-secret';
+    }
+    this.config = config;
+    this.logger = new Logger(config.log.level);
     this.app = express();
-    this.app.use(express.json({ limit: '1mb' }));
+
+    // 安全响应头（CSP 关闭：管理后台当前使用内联样式/脚本，重构后再启用）
+    this.app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+
+    // 请求 ID 与访问日志
+    this.app.use((req, res, next) => {
+      req.id = crypto.randomBytes(8).toString('hex');
+      req.startedAt = process.hrtime.bigint();
+      res.setHeader('X-Request-Id', req.id);
+      res.on('finish', () => {
+        const ms = Number(process.hrtime.bigint() - req.startedAt) / 1e6;
+        this.logger.info('http', { requestId: req.id, method: req.method, path: req.originalUrl, status: res.statusCode, ms: Math.round(ms) });
+      });
+      next();
+    });
+
+    // 接口限流：全局 + 登录接口更严格
+    this.app.use(rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 1000,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { success: false, code: 'RATE_LIMITED', error: '请求过于频繁，请稍后再试' }
+    }));
+    this.app.use(['/api/wx/login', '/api/admin/login'], rateLimit({
+      windowMs: 15 * 60 * 1000,
+      limit: 20,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { success: false, code: 'RATE_LIMITED', error: '登录尝试过于频繁，请稍后再试' }
+    }));
+
+    // 保留原始请求体，供微信支付回调验签使用
+    this.app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
     this.app.use((req, res, next) => {
       res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, X-Tenant-Id');
+      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tenant-Id');
+      res.header('Access-Control-Expose-Headers', 'X-Request-Id');
       res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
       if (req.method === 'OPTIONS') return res.sendStatus(204);
       next();
     });
 
     this.store = new JsonStore(config.dataDir);
+    this.auth = new AuthService(config.auth);
+    this.adminService = new AdminService(this.store, this.auth, config.admin);
     this.wechat = new WechatService(config.wechat);
     this.memberManager = new MemberManager(this.store, this.wechat);
     this.pointsManager = new PointsManager(this.store, config.points);
@@ -50,22 +99,30 @@ class WechatSaas {
     this.formManager = new FormManager(this.store);
     this.appointmentManager = new AppointmentManager(this.store);
     this.statsService = new StatsService(this.store);
+    this.auditLog = new AuditLog(this.store);
   }
 
   async initialize() {
+    if (this.config.env === 'production') {
+      this.config.validateForProduction();
+    }
+
     console.log('========================================');
     console.log('  邻里团 SaaS v1.0 正在启动...');
     console.log('  微信模式: ' + (this.wechat.mock ? '本地模拟(mock)' : '真实对接'));
     console.log('========================================');
 
     this.store.initialize();
-    await seed.run(this.store, this.productManager, this.couponManager, this.formManager, this.appointmentManager, config);
+    await seed.run(this.store, this.productManager, this.couponManager, this.formManager, this.appointmentManager, this.config);
+    this.adminService.ensureDefaultAdmin(this.config.tenant.defaultId);
     this.groupBuyManager.initialize();
     this.orderManager.initialize();
 
     this.apiService = new ApiService(this.app, {
       store: this.store,
       config,
+      auth: this.auth,
+      adminService: this.adminService,
       productManager: this.productManager,
       memberManager: this.memberManager,
       pointsManager: this.pointsManager,
@@ -75,6 +132,7 @@ class WechatSaas {
       formManager: this.formManager,
       appointmentManager: this.appointmentManager,
       statsService: this.statsService,
+      auditLog: this.auditLog,
       wechat: this.wechat
     });
     this.apiService.registerRoutes();
@@ -103,7 +161,9 @@ if (require.main === module) {
   saas.initialize().then(() => {
     saas.start();
     process.on('SIGINT', async () => { await saas.shutdown(); process.exit(0); });
+    process.on('SIGTERM', async () => { await saas.shutdown(); process.exit(0); });
     process.on('uncaughtException', (e) => console.error('[WechatSaas] 未捕获异常:', e));
+    process.on('unhandledRejection', (e) => console.error('[WechatSaas] 未处理的 Promise 拒绝:', e));
   }).catch(e => {
     console.error('[WechatSaas] 启动失败:', e);
     process.exit(1);
@@ -111,3 +171,5 @@ if (require.main === module) {
 }
 
 module.exports = WechatSaas;
+
+

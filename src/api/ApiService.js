@@ -1,58 +1,123 @@
 /**
  * REST API 服务
  * 分两组：
- *  - /api/admin/*   管理后台（商家使用）
- *  - /api/wx/*      小程序端（微信用户使用）
- * 多商户通过 X-Tenant-Id 请求头隔离（默认使用配置中的默认商户）
+ *  - /api/admin/*   管理后台（商家使用，需管理员令牌）
+ *  - /api/wx/*      小程序端（微信用户使用，需会员令牌；公开目录除外）
+ * 会员与管理员身份一律从签名令牌推导，不再信任客户端自报的 memberId / X-Tenant-Id
  */
+const { toAppError } = require('../errors');
+const { validate } = require('../validation');
 class ApiService {
   constructor(app, deps) {
     this.app = app;
-    this.deps = deps; // { store, config, tenantManager, productManager, memberManager, pointsManager,
-                      //   couponManager, orderManager, groupBuyManager, formManager, appointmentManager, statsService, wechat }
+    this.deps = deps;
   }
 
   registerRoutes() {
     const { app } = this;
+    const { store, config, auth, adminService, productManager: pm, orderManager: om,
+            memberManager: mm, pointsManager: pts, couponManager: cm, groupBuyManager: gbm,
+            formManager: fm, appointmentManager: am, statsService: stats, auditLog, wechat } = this.deps;
 
     // ---------- 通用工具 ----------
-    const tenantOf = (req) => req.headers['x-tenant-id'] || this.deps.config.tenant.defaultId;
     const ok = (res, data) => res.json({ success: true, data });
-    const fail = (res, err, code = 400) => res.status(code).json({ success: false, error: err.message || String(err) });
+    const fail = (req, res, err) => {
+      const appErr = toAppError(err);
+      res.status(appErr.status).json({
+        success: false,
+        code: appErr.code,
+        error: appErr.message,
+        ...(appErr.details ? { details: appErr.details } : {}),
+        requestId: req.id || null
+      });
+    };
     const wrap = (fn) => async (req, res) => {
-      try { await fn(req, res); } catch (e) { fail(res, e); }
+      try { await fn(req, res); } catch (e) { fail(req, res, e); }
+    };
+    const bearer = (req) => {
+      const h = req.headers['authorization'] || '';
+      if (typeof h !== 'string') return null;
+      const m = h.match(/^Bearer\s+(.+)$/i);
+      return m ? m[1] : null;
+    };
+    const unauthorized = (req, res, msg) => res.status(401).json({ success: false, code: 'UNAUTHORIZED', error: msg || '未登录或登录已过期', requestId: req.id || null });
+
+    const authMember = (req, res, next) => {
+      const payload = auth.verify(bearer(req), 'member');
+      if (!payload) return unauthorized(req, res);
+      req.auth = payload;
+      req.memberId = payload.sub;
+      req.tenantId = payload.tenantId;
+      next();
     };
 
-    const { productManager: pm, orderManager: om, memberManager: mm, pointsManager: pts,
-            couponManager: cm, groupBuyManager: gbm, formManager: fm, appointmentManager: am,
-            statsService: stats, wechat } = this.deps;
+    const authAdmin = (req, res, next) => {
+      const payload = auth.verify(bearer(req), 'admin');
+      if (!payload) return unauthorized(req, res);
+      if (!adminService.getById(payload.sub, payload.tenantId)) return unauthorized(req, res);
+      req.auth = payload;
+      req.adminId = payload.sub;
+      req.tenantId = payload.tenantId;
+      next();
+    };
+
+    const paginate = (req, arr) => {
+      const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20));
+      const total = arr.length;
+      const start = (page - 1) * pageSize;
+      return { list: arr.slice(start, start + pageSize), total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    };
+
+    const clientIp = (req) => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+    const audit = (req, action, resource, resourceId, detail) => {
+      auditLog.record({
+        tenantId: req.tenantId,
+        actorType: req.auth ? req.auth.typ : 'admin',
+        actorId: req.adminId || req.memberId || '',
+        action,
+        resource,
+        resourceId: resourceId || '',
+        detail,
+        ip: clientIp(req)
+      });
+    };
+
+    const memberOf = (req) => {
+      const m = mm.get(req.memberId);
+      if (!m || m.tenantId !== req.tenantId) return null;
+      return m;
+    };
+
+    // 公开目录仍可无登录访问，用于商户展示；敏感身份接口均需鉴权
+    const tenantOf = (req) => req.headers['x-tenant-id'] || config.tenant.defaultId;
 
     // ============ 小程序端 API ============
 
-    // 微信登录
+    // 微信登录（仅此接口不需要会员令牌）
     app.post('/api/wx/login', wrap(async (req, res) => {
-      const member = await mm.loginByWechatCode(req.body.code, tenantOf(req));
+      const body = validate('login', req.body);
+      const tenantId = body.tenantId || tenantOf(req);
+      const member = await mm.loginByWechatCode(body.code, tenantId);
       ok(res, {
         memberId: member.id,
         nickname: member.nickname,
         isNew: false,
         mock: wechat.mock,
-        token: 'mt_' + Buffer.from(member.id).toString('base64')
+        token: auth.issueMemberToken(member)
       });
     }));
 
-    // 店铺首页：分类+商品+进行中的团购
     app.get('/api/wx/home', wrap(async (req, res) => {
       const tenantId = tenantOf(req);
       ok(res, {
-        tenant: { id: tenantId, name: this.deps.config.tenant.defaultName },
+        tenant: { id: tenantId, name: config.tenant.defaultName },
         categories: pm.listCategories(tenantId),
         products: pm.list(tenantId, { onSaleOnly: true }).slice(0, 20).map(p => this._priceView(p)),
         groupBuys: gbm.list(tenantId, 'active').slice(0, 10)
       });
     }));
 
-    // 商品列表/详情
     app.get('/api/wx/products', wrap(async (req, res) => {
       const list = pm.list(tenantOf(req), {
         onSaleOnly: true,
@@ -68,10 +133,11 @@ class ApiService {
       ok(res, this._priceView(p));
     }));
 
-    // 会员资料
-    app.get('/api/wx/member/:id', wrap(async (req, res) => {
-      const m = mm.get(req.params.id);
-      if (!m) throw new Error('会员不存在');
+    // 会员资料（身份来自令牌，路径 :id 必须与令牌一致）
+    app.get('/api/wx/member/:id', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
+      const m = memberOf(req);
+      if (!m) return unauthorized(req, res);
       ok(res, {
         id: m.id, nickname: m.nickname, avatar: m.avatar, phone: m.phone,
         addresses: m.addresses, totalSpent: m.totalSpent, orderCount: m.orderCount,
@@ -79,64 +145,75 @@ class ApiService {
       });
     }));
 
-    app.put('/api/wx/member/:id', wrap(async (req, res) => {
-      ok(res, mm.updateProfile(req.params.id, req.body));
+    app.put('/api/wx/member/:id', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
+      ok(res, mm.updateProfile(req.memberId, validate('memberUpdate', req.body)));
     }));
 
-    // 收货地址
-    app.post('/api/wx/member/:id/addresses', wrap(async (req, res) => {
-      ok(res, mm.addAddress(req.params.id, req.body));
+    app.post('/api/wx/member/:id/addresses', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
+      ok(res, mm.addAddress(req.memberId, validate('addressCreate', req.body)));
     }));
-    app.delete('/api/wx/member/:id/addresses/:addressId', wrap(async (req, res) => {
-      ok(res, { removed: mm.removeAddress(req.params.id, req.params.addressId) });
+    app.delete('/api/wx/member/:id/addresses/:addressId', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
+      ok(res, { removed: mm.removeAddress(req.memberId, req.params.addressId) });
     }));
 
-    // 积分
-    app.get('/api/wx/member/:id/points', wrap(async (req, res) => {
+    app.get('/api/wx/member/:id/points', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
       ok(res, {
-        balance: pts.getBalance(req.params.id),
-        ledger: pts.getLedger(req.params.id)
+        balance: pts.getBalance(req.memberId),
+        ledger: pts.getLedger(req.memberId)
       });
     }));
 
-    // 优惠券
     app.get('/api/wx/coupons/templates', wrap(async (req, res) => {
-      ok(res, cm.listTemplates(tenantOf(req)).filter(t => t.enabled));
+      ok(res, cm.listTemplates(tenantOf(req)).filter(t => t.enabled).map(c => this._couponView(c)));
     }));
-    app.post('/api/wx/coupons/claim', wrap(async (req, res) => {
-      ok(res, cm.claim(req.body.templateId, req.body.memberId));
+    app.post('/api/wx/coupons/claim', authMember, wrap(async (req, res) => {
+      if (!memberOf(req)) return unauthorized(req, res);
+      const tpl = cm.getTemplate(req.body.templateId);
+      if (!tpl || tpl.tenantId !== req.tenantId) throw new Error('优惠券不存在');
+      ok(res, cm.claim(req.body.templateId, req.memberId));
     }));
-    app.get('/api/wx/member/:id/coupons', wrap(async (req, res) => {
-      ok(res, cm.listMine(req.params.id, req.query.status));
+    app.get('/api/wx/member/:id/coupons', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
+      ok(res, cm.listMine(req.memberId, req.query.status));
     }));
 
     // 订单
-    app.post('/api/wx/orders', wrap(async (req, res) => {
-      const { memberId, items, options } = req.body;
-      const order = om.create(tenantOf(req), memberId, items, options || {});
+    app.post('/api/wx/orders', authMember, wrap(async (req, res) => {
+      if (!memberOf(req)) return unauthorized(req, res);
+      const body = validate('orderCreate', req.body);
+      const order = om.create(req.tenantId, req.memberId, body.items, body.options);
       ok(res, order);
     }));
 
-    app.post('/api/wx/orders/:id/pay', wrap(async (req, res) => {
-      const { memberId, openid } = req.body;
-      ok(res, await om.pay(req.params.id, memberId, openid));
+    app.post('/api/wx/orders/:id/pay', authMember, wrap(async (req, res) => {
+      ok(res, await om.pay(req.params.id, req.memberId));
     }));
 
-    app.post('/api/wx/orders/:id/cancel', wrap(async (req, res) => {
-      ok(res, om.cancel(req.params.id, req.body.memberId, req.body.reason));
+    app.post('/api/wx/orders/:id/cancel', authMember, wrap(async (req, res) => {
+      ok(res, om.cancel(req.params.id, req.memberId, req.body.reason));
     }));
 
-    app.post('/api/wx/orders/:id/complete', wrap(async (req, res) => {
-      ok(res, om.complete(req.params.id, req.body.memberId));
+    app.post('/api/wx/orders/:id/complete', authMember, wrap(async (req, res) => {
+      ok(res, om.complete(req.params.id, req.memberId));
     }));
 
-    app.get('/api/wx/orders', wrap(async (req, res) => {
-      ok(res, om.listByMember(req.query.memberId, req.query.status));
-    }));
-
-    app.get('/api/wx/orders/:id', wrap(async (req, res) => {
+    app.post('/api/wx/orders/:id/refund', authMember, wrap(async (req, res) => {
       const o = om.get(req.params.id);
-      if (!o) throw new Error('订单不存在');
+      if (!o || o.memberId !== req.memberId) throw new Error('订单不存在');
+      ok(res, await om.refund(req.params.id, req.body.reason));
+    }));
+
+    app.get('/api/wx/orders', authMember, wrap(async (req, res) => {
+      ok(res, om.listByMember(req.memberId, req.query.status));
+    }));
+
+    app.get('/api/wx/orders/:id', authMember, wrap(async (req, res) => {
+      const o = om.get(req.params.id);
+      if (!o || o.memberId !== req.memberId) throw new Error('订单不存在');
       ok(res, o);
     }));
 
@@ -149,8 +226,11 @@ class ApiService {
       if (!gb) throw new Error('团购不存在');
       ok(res, gb);
     }));
-    app.post('/api/wx/groupbuys/:id/join', wrap(async (req, res) => {
-      ok(res, gbm.join(req.params.id, req.body.memberId));
+    app.post('/api/wx/groupbuys/:id/join', authMember, wrap(async (req, res) => {
+      if (!memberOf(req)) return unauthorized(req, res);
+      const gb = gbm.get(req.params.id);
+      if (!gb || gb.tenantId !== req.tenantId) throw new Error('团购不存在');
+      ok(res, gbm.join(req.params.id, req.memberId));
     }));
 
     // 表单问卷
@@ -162,8 +242,11 @@ class ApiService {
       if (!f) throw new Error('表单不存在');
       ok(res, f);
     }));
-    app.post('/api/wx/forms/:id/submit', wrap(async (req, res) => {
-      ok(res, fm.submit(req.params.id, req.body.memberId, req.body.answers));
+    app.post('/api/wx/forms/:id/submit', authMember, wrap(async (req, res) => {
+      if (!memberOf(req)) return unauthorized(req, res);
+      const f = fm.get(req.params.id);
+      if (!f || f.tenantId !== req.tenantId) throw new Error('表单不存在');
+      ok(res, fm.submit(req.params.id, req.memberId, validate('formSubmit', req.body).answers));
     }));
 
     // 预约
@@ -173,122 +256,195 @@ class ApiService {
     app.get('/api/wx/appointments/slots', wrap(async (req, res) => {
       ok(res, am.querySlots(req.query.serviceId, req.query.date));
     }));
-    app.post('/api/wx/appointments', wrap(async (req, res) => {
-      ok(res, am.book(req.body.serviceId, req.body.memberId, req.body.date, req.body.slot, req.body.note));
+    app.post('/api/wx/appointments', authMember, wrap(async (req, res) => {
+      if (!memberOf(req)) return unauthorized(req, res);
+      const svc = store.findById('appointmentServices', req.body.serviceId);
+      if (!svc || svc.tenantId !== req.tenantId) throw new Error('服务不存在');
+      const body = validate('appointmentBook', req.body);
+      ok(res, am.book(body.serviceId, req.memberId, body.date, body.slot, body.note));
     }));
-    app.post('/api/wx/appointments/:id/cancel', wrap(async (req, res) => {
-      ok(res, am.cancel(req.params.id, req.body.memberId));
+    app.post('/api/wx/appointments/:id/cancel', authMember, wrap(async (req, res) => {
+      ok(res, am.cancel(req.params.id, req.memberId));
     }));
-    app.get('/api/wx/member/:id/appointments', wrap(async (req, res) => {
-      ok(res, am.listByMember(req.params.id));
+    app.get('/api/wx/member/:id/appointments', authMember, wrap(async (req, res) => {
+      if (req.params.id !== req.memberId) return unauthorized(req, res);
+      ok(res, am.listByMember(req.memberId));
     }));
 
-    // 微信支付异步通知（真实模式接入点）
-    app.post('/api/wx/pay/notify', wrap(async (req, res) => {
-      const orderNo = req.body.out_trade_no || (req.body.resource && req.body.resource.out_trade_no);
-      const txId = req.body.transaction_id || '';
-      if (orderNo) om.handlePayNotify(orderNo, txId);
-      res.json({ code: 'SUCCESS', message: '成功' });
-    }));
+    // 微信支付异步通知：真实模式验签+解密+核对金额/商户号/AppID 后入账
+    app.post('/api/wx/pay/notify', async (req, res) => {
+      try {
+        let orderNo, txId, total;
+        if (wechat.mock) {
+          orderNo = req.body.out_trade_no || (req.body.resource && req.body.resource.out_trade_no);
+          txId = req.body.transaction_id || '';
+        } else {
+          const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
+          const payload = wechat.verifyPayNotify(req.headers, rawBody);
+          if (payload.mchid && payload.mchid !== wechat.mchId) throw new Error('商户号不符');
+          if (payload.appid && payload.appid !== wechat.appId) throw new Error('AppID 不符');
+          if (payload.trade_state && payload.trade_state !== 'SUCCESS') {
+            return res.json({ code: 'SUCCESS', message: '成功' }); // 非成功状态直接确认，避免重复回调
+          }
+          orderNo = payload.out_trade_no;
+          txId = payload.transaction_id;
+          total = payload.amount && payload.amount.total;
+        }
+        if (orderNo) om.handlePayNotifyVerified(orderNo, txId, total);
+        res.json({ code: 'SUCCESS', message: '成功' });
+      } catch (e) {
+        console.error('[支付回调] 处理失败:', e.message);
+        res.status(400).json({ code: 'FAIL', message: e.message });
+      }
+    });
+
+    // 微信退款异步通知：真实模式验签+解密后完成退款
+    app.post('/api/wx/pay/refund/notify', async (req, res) => {
+      try {
+        if (wechat.mock) return res.json({ code: 'SUCCESS', message: '成功' });
+        const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
+        const payload = wechat.verifyPayNotify(req.headers, rawBody);
+        om.handleRefundNotifyVerified(payload);
+        res.json({ code: 'SUCCESS', message: '成功' });
+      } catch (e) {
+        console.error('[退款回调] 处理失败:', e.message);
+        res.status(400).json({ code: 'FAIL', message: e.message });
+      }
+    });
 
     // ============ 管理后台 API ============
 
-    // 经营看板
-    app.get('/api/admin/stats', wrap(async (req, res) => {
-      ok(res, stats.dashboard(tenantOf(req)));
+    // 管理员登录
+    app.post('/api/admin/login', async (req, res) => {
+      try {
+        const tenantId = req.body.tenantId || config.tenant.defaultId;
+        const admin = adminService.authenticate(req.body.username, tenantId, req.body.password);
+        if (!admin) return res.status(401).json({ success: false, error: '用户名或密码错误' });
+        auditLog.record({ tenantId, actorType: 'admin', actorId: admin.id, actorName: admin.username, action: 'admin.login', detail: { username: admin.username }, ip: clientIp(req) });
+        return ok(res, {
+          token: auth.issueAdminToken(admin),
+          username: admin.username,
+          role: admin.role,
+          tenantId
+        });
+      } catch (e) {
+        return fail(req, res, e);
+      }
+    });
+
+    app.get('/api/admin/stats', authAdmin, wrap(async (req, res) => {
+      ok(res, stats.dashboard(req.tenantId));
     }));
 
-    // 分类
-    app.get('/api/admin/categories', wrap(async (req, res) => {
-      ok(res, pm.listCategories(tenantOf(req)));
+    app.get('/api/admin/categories', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, pm.listCategories(req.tenantId)));
     }));
-    app.post('/api/admin/categories', wrap(async (req, res) => {
-      ok(res, pm.createCategory(tenantOf(req), req.body));
+    app.post('/api/admin/categories', authAdmin, wrap(async (req, res) => {
+      ok(res, pm.createCategory(req.tenantId, req.body));
     }));
 
-    // 商品
-    app.get('/api/admin/products', wrap(async (req, res) => {
-      ok(res, pm.list(tenantOf(req), { keyword: req.query.keyword }).map(p => this._priceView(p)));
+    app.get('/api/admin/products', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, pm.list(req.tenantId, { keyword: req.query.keyword }).map(p => this._priceView(p))));
     }));
-    app.post('/api/admin/products', wrap(async (req, res) => {
-      ok(res, this._priceView(pm.create(tenantOf(req), req.body)));
+    app.post('/api/admin/products', authAdmin, wrap(async (req, res) => {
+      const p = pm.create(req.tenantId, validate('productCreate', req.body));
+      audit(req, 'product.create', 'product', p.id, { name: p.name });
+      ok(res, this._priceView(p));
     }));
-    app.put('/api/admin/products/:id', wrap(async (req, res) => {
-      ok(res, this._priceView(pm.update(req.params.id, req.body)));
+    app.put('/api/admin/products/:id', authAdmin, wrap(async (req, res) => {
+      const p = pm.get(req.params.id);
+      if (!p || p.tenantId !== req.tenantId) throw new Error('商品不存在');
+      const updated = pm.update(req.params.id, validate('productUpdate', req.body));
+      audit(req, 'product.update', 'product', req.params.id, { patch: req.body });
+      ok(res, this._priceView(updated));
     }));
-    app.delete('/api/admin/products/:id', wrap(async (req, res) => {
+    app.delete('/api/admin/products/:id', authAdmin, wrap(async (req, res) => {
+      const p = pm.get(req.params.id);
+      if (!p || p.tenantId !== req.tenantId) throw new Error('商品不存在');
       ok(res, { removed: pm.remove(req.params.id) });
+      audit(req, 'product.delete', 'product', req.params.id, { name: p.name });
     }));
 
-    // 订单
-    app.get('/api/admin/orders', wrap(async (req, res) => {
-      ok(res, om.listByTenant(tenantOf(req), { status: req.query.status, keyword: req.query.keyword }));
+    app.get('/api/admin/orders', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, om.listByTenant(req.tenantId, { status: req.query.status, keyword: req.query.keyword })));
     }));
-    app.post('/api/admin/orders/:id/deliver', wrap(async (req, res) => {
+    app.post('/api/admin/orders/:id/deliver', authAdmin, wrap(async (req, res) => {
+      const o = om.get(req.params.id);
+      if (!o || o.tenantId !== req.tenantId) throw new Error('订单不存在');
       ok(res, om.deliver(req.params.id));
+      audit(req, 'order.deliver', 'order', req.params.id, { orderNo: o.orderNo });
+    }));
+    app.post('/api/admin/orders/:id/refund', authAdmin, wrap(async (req, res) => {
+      const o = om.get(req.params.id);
+      if (!o || o.tenantId !== req.tenantId) throw new Error('订单不存在');
+      ok(res, await om.refund(req.params.id, req.body.reason));
+      audit(req, 'order.refund', 'order', req.params.id, { orderNo: o.orderNo, reason: req.body.reason });
     }));
 
-    // 会员
-    app.get('/api/admin/members', wrap(async (req, res) => {
-      ok(res, mm.listByTenant(tenantOf(req), req.query.keyword));
+    app.get('/api/admin/members', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, mm.listByTenant(req.tenantId, req.query.keyword)));
     }));
 
-    // 积分规则与流水
-    app.get('/api/admin/points/rules', wrap(async (req, res) => {
-      ok(res, this.deps.config.points);
+    app.get('/api/admin/points/rules', authAdmin, wrap(async (req, res) => {
+      ok(res, config.points);
     }));
 
-    // 优惠券
-    app.get('/api/admin/coupons', wrap(async (req, res) => {
-      ok(res, cm.listTemplates(tenantOf(req)));
+    app.get('/api/admin/coupons', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, cm.listTemplates(req.tenantId).map(c => this._couponView(c))));
     }));
-    app.post('/api/admin/coupons', wrap(async (req, res) => {
-      ok(res, cm.createTemplate(tenantOf(req), req.body));
+    app.post('/api/admin/coupons', authAdmin, wrap(async (req, res) => {
+      const c = cm.createTemplate(req.tenantId, validate('couponCreate', req.body));
+      audit(req, 'coupon.create', 'coupon', c.id, { name: c.name });
+      ok(res, c);
     }));
 
-    // 团购
-    app.get('/api/admin/groupbuys', wrap(async (req, res) => {
-      ok(res, gbm.list(tenantOf(req)));
+    app.get('/api/admin/groupbuys', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, gbm.list(req.tenantId)));
     }));
-    app.post('/api/admin/groupbuys', wrap(async (req, res) => {
-      ok(res, gbm.create(tenantOf(req), req.body));
+    app.post('/api/admin/groupbuys', authAdmin, wrap(async (req, res) => {
+      const g = gbm.create(req.tenantId, validate('groupBuyCreate', req.body));
+      audit(req, 'groupbuy.create', 'groupbuy', g.id, { title: g.title });
+      ok(res, g);
     }));
-    app.post('/api/admin/groupbuys/:id/cancel', wrap(async (req, res) => {
+    app.post('/api/admin/groupbuys/:id/cancel', authAdmin, wrap(async (req, res) => {
+      const gb = gbm.get(req.params.id);
+      if (!gb || gb.tenantId !== req.tenantId) throw new Error('团购不存在');
       ok(res, gbm.cancel(req.params.id));
+      audit(req, 'groupbuy.cancel', 'groupbuy', req.params.id, { title: gb.title });
     }));
 
-    // 表单
-    app.get('/api/admin/forms', wrap(async (req, res) => {
-      ok(res, fm.list(tenantOf(req)));
+    app.get('/api/admin/forms', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, fm.list(req.tenantId)));
     }));
-    app.post('/api/admin/forms', wrap(async (req, res) => {
-      ok(res, fm.create(tenantOf(req), req.body));
+    app.post('/api/admin/forms', authAdmin, wrap(async (req, res) => {
+      ok(res, fm.create(req.tenantId, validate('formCreate', req.body)));
     }));
-    app.get('/api/admin/forms/:id/stats', wrap(async (req, res) => {
+    app.get('/api/admin/forms/:id/stats', authAdmin, wrap(async (req, res) => {
+      const f = fm.get(req.params.id);
+      if (!f || f.tenantId !== req.tenantId) throw new Error('表单不存在');
       ok(res, fm.stats(req.params.id));
     }));
 
-    // 预约
-    app.get('/api/admin/appointments/services', wrap(async (req, res) => {
-      ok(res, am.listServices(tenantOf(req)).map(s => ({ ...s, price: s.price / 100 })));
+    app.get('/api/admin/appointments/services', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, am.listServices(req.tenantId).map(s => ({ ...s, price: s.price / 100 }))));
     }));
-    app.post('/api/admin/appointments/services', wrap(async (req, res) => {
-      ok(res, am.createService(tenantOf(req), req.body));
+    app.post('/api/admin/appointments/services', authAdmin, wrap(async (req, res) => {
+      ok(res, am.createService(req.tenantId, validate('appointmentServiceCreate', req.body)));
     }));
-    app.get('/api/admin/appointments', wrap(async (req, res) => {
-      ok(res, am.listByTenant(tenantOf(req), {
-        date: req.query.date,
-        status: req.query.status
-      }));
+    app.get('/api/admin/appointments', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, am.listByTenant(req.tenantId, { date: req.query.date, status: req.query.status })));
     }));
 
-    // 系统信息
-    app.get('/api/admin/system', wrap(async (req, res) => {
+    app.get('/api/admin/audit-logs', authAdmin, wrap(async (req, res) => {
+      ok(res, paginate(req, auditLog.listByTenant(req.tenantId, { action: req.query.action, actorType: req.query.actorType })));
+    }));
+
+    app.get('/api/admin/system', authAdmin, wrap(async (req, res) => {
       ok(res, {
         name: '邻里团SaaS',
         version: '1.0.0',
         wechatMock: wechat.mock,
-        tenantId: tenantOf(req),
+        tenantId: req.tenantId,
         uptime: process.uptime(),
         nodeVersion: process.version
       });
@@ -296,13 +452,12 @@ class ApiService {
 
     // 前端页面
     const path = require('path');
-    this.app.get('/', (req, res) => {
+    app.get('/', (req, res) => {
       res.sendFile(path.join(__dirname, '..', 'web', 'templates', 'index.html'));
     });
-    this.app.use('/static', require('express').static(path.join(__dirname, '..', 'web', 'static')));
+    app.use('/static', require('express').static(path.join(__dirname, '..', 'web', 'static')));
 
-    // 健康检查
-    this.app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+    app.get('/healthz', (req, res) => res.json({ status: 'ok', uptime: Math.round(process.uptime()), collections: store ? [...store.collections.keys()].length : 0 }));
   }
 
   _priceView(p) {
@@ -312,6 +467,15 @@ class ApiService {
       originalPrice: p.originalPrice / 100
     };
   }
+
+  _couponView(c) {
+    return {
+      ...c,
+      threshold: c.threshold / 100,
+      amount: c.amount / 100
+    };
+  }
 }
 
 module.exports = ApiService;
+
