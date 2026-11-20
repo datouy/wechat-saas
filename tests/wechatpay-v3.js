@@ -1,6 +1,6 @@
 /**
  * 微信支付 v3 加解密/验签单元测试（使用本地生成的 RSA 密钥验证签名往返）
- * 覆盖：小程序支付参数 RSA 签名、回调验签、AES-256-GCM 资源解密、错误签名拒绝
+ * 覆盖：小程序支付参数 RSA 签名、回调验签、AES-256-GCM 资源解密、错误签名拒绝、平台证书下载轮换
  */
 const crypto = require('crypto');
 const WechatService = require('../src/services/WechatService');
@@ -121,6 +121,54 @@ test('未知平台证书序列号被拒绝', () => {
   assert(threw, '未知证书序列号应当被拒绝');
 });
 
-console.log('\n===== 结果 =====');
-console.log('通过: ' + passed + ' | 失败: ' + failed);
-process.exit(failed ? 1 : 0);
+(async () => {
+  try {
+    // 平台证书下载/轮换测试：mock _requestV3 返回加密证书，避免真实网络请求
+    const newCert = {
+      serial_no: 'PLATFORM-SERIAL-2',
+      effective_time: '2026-01-01T00:00:00+08:00',
+      expire_time: '2030-01-01T00:00:00+08:00',
+      certificate: platformPublicPem
+    };
+    const nonce = 'abcdefghijkl';
+    const aad = 'certificate';
+    const key = Buffer.from(API_V3_KEY, 'utf8');
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, Buffer.from(nonce, 'utf8'));
+    cipher.setAAD(Buffer.from(aad, 'utf8'));
+    const enc = Buffer.concat([cipher.update(JSON.stringify(newCert), 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const ciphertext = Buffer.concat([enc, tag]).toString('base64');
+
+    const original = wechat._requestV3;
+    wechat._requestV3 = async () => ({ data: [{ encrypt_certificate: { ciphertext, nonce, associated_data: aad } }] });
+    try {
+      await wechat.downloadPlatformCertificates();
+      const cert = wechat.getPlatformCert('PLATFORM-SERIAL-2');
+      assert(typeof cert === 'string' && cert.includes('BEGIN PUBLIC KEY'), '下载的证书未按序列号写入');
+
+      const { resource } = makeNotifyResource();
+      const body = JSON.stringify({ id: 'evt-004', event_type: 'TRANSACTION.SUCCESS', resource });
+      const ts = String(Math.floor(Date.now() / 1000));
+      const n = crypto.randomBytes(16).toString('hex');
+      const sig = signNotify(ts, n, body);
+      const result = wechat.verifyPayNotify({
+        'wechatpay-timestamp': ts,
+        'wechatpay-nonce': n,
+        'wechatpay-signature': sig,
+        'wechatpay-serial': 'PLATFORM-SERIAL-2'
+      }, body);
+      assert(result.out_trade_no === 'NT20260101000001', '新证书验签+解密失败');
+      console.log('  ✅ 下载并轮换平台证书');
+      passed++;
+    } finally {
+      wechat._requestV3 = original;
+    }
+  } catch (e) {
+    console.log('  ❌ 下载并轮换平台证书 -> ' + e.message);
+    failed++;
+  }
+
+  console.log('\n===== 结果 =====');
+  console.log('通过: ' + passed + ' | 失败: ' + failed);
+  process.exit(failed ? 1 : 0);
+})();

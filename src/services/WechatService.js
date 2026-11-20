@@ -213,7 +213,7 @@ class WechatService {
     if (!timestamp || !nonce || !signature || !serial) {
       throw new Error('支付回调缺少验签头');
     }
-    const cert = this.platformCertificates[serial];
+    const cert = this.getPlatformCert(serial);
     if (!cert) throw new Error('未找到微信平台证书: ' + serial);
 
     const message = timestamp + '\n' + nonce + '\n' + rawBody + '\n';
@@ -242,6 +242,43 @@ class WechatService {
     decipher.setAAD(Buffer.from(resource.associated_data || '', 'utf8'));
     const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
     return JSON.parse(decrypted);
+  }
+
+  /**
+   * 下载并轮换微信平台证书（GET /v3/certificates）
+   * 响应为用 APIv3 密钥 AES-256-GCM 加密的证书列表；解密后按 serial_no 存入 platformCertificates。
+   * 说明：首次联调需先在商户平台下载平台证书作为 bootstrap（或首次下载后人工核对），后续可用本方法自动轮换。
+   */
+  async downloadPlatformCertificates() {
+    if (!this.mchId || !this.serialNo || !this.privateKey || !this.apiV3Key) {
+      throw business('微信支付配置不完整，无法下载平台证书');
+    }
+    const result = await this._requestV3('GET', '/v3/certificates', null);
+    const list = result && result.data;
+    if (!Array.isArray(list) || list.length === 0) throw business('下载平台证书失败：响应缺少 data');
+
+    const updated = {};
+    for (const item of list) {
+      if (!item.encrypt_certificate) continue;
+      const decrypted = this.decryptResource(item.encrypt_certificate);
+      // 解密字段：serial_no / effective_time / expire_time / certificate
+      if (decrypted.serial_no && decrypted.certificate) {
+        updated[decrypted.serial_no] = {
+          pem: decrypted.certificate,
+          expireAt: decrypted.expire_time || null
+        };
+      }
+    }
+    // 兼容旧格式（字符串 PEM）与新增的 {pem, expireAt} 对象
+    this.platformCertificates = { ...this.platformCertificates, ...updated };
+    return this.platformCertificates;
+  }
+
+  /** 获取指定序列号的平台证书（兼容字符串/对象两种存储）；不存在返回 null */
+  getPlatformCert(serialNo) {
+    const c = this.platformCertificates && this.platformCertificates[serialNo];
+    if (!c) return null;
+    return typeof c === 'string' ? c : c.pem;
   }
 
   /** 退款（微信支付 v3） */
