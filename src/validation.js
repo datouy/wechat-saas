@@ -12,8 +12,7 @@ const nonNegativeInt = z.coerce.number().int().nonnegative();
 
 const schemas = {
   login: z.object({
-    code: z.string().min(1, '缺少登录code').max(128),
-    tenantId: id.optional()
+    code: z.string().min(1, '缺少登录code').max(128)
   }),
 
   productCreate: z.object({

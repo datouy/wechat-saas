@@ -15,7 +15,7 @@ class ApiService {
 
   registerRoutes() {
     const { app } = this;
-    const { store, config, auth, adminService, productManager: pm, orderManager: om,
+    const { store, config, tenantManager, auth, adminService, productManager: pm, orderManager: om,
             memberManager: mm, pointsManager: pts, couponManager: cm, groupBuyManager: gbm,
             formManager: fm, appointmentManager: am, statsService: stats, auditLog, wechat } = this.deps;
 
@@ -90,14 +90,19 @@ class ApiService {
     };
 
     // 公开目录仍可无登录访问，用于商户展示；敏感身份接口均需鉴权
-    const tenantOf = (req) => req.headers['x-tenant-id'] || config.tenant.defaultId;
+    // 租户必须命中注册表，拒绝客户端自报的任意 tenantId
+    const tenantOf = (req) => {
+      const id = req.headers['x-tenant-id'] || config.tenant.defaultId;
+      if (!tenantManager.exists(id)) throw business('租户不存在或已停用');
+      return id;
+    };
 
     // ============ 小程序端 API ============
 
     // 微信登录（仅此接口不需要会员令牌）
     app.post('/api/wx/login', wrap(async (req, res) => {
       const body = validate('login', req.body);
-      const tenantId = body.tenantId || tenantOf(req);
+      const tenantId = tenantOf(req);
       const member = await mm.loginByWechatCode(body.code, tenantId);
       ok(res, {
         memberId: member.id,
@@ -128,8 +133,9 @@ class ApiService {
     }));
 
     app.get('/api/wx/products/:id', wrap(async (req, res) => {
+      const tenantId = tenantOf(req);
       const p = pm.get(req.params.id);
-      if (!p) throw business('商品不存在');
+      if (!p || p.tenantId !== tenantId) throw business('商品不存在');
       ok(res, this._priceView(p));
     }));
 
@@ -222,8 +228,9 @@ class ApiService {
       ok(res, gbm.list(tenantOf(req), req.query.status));
     }));
     app.get('/api/wx/groupbuys/:id', wrap(async (req, res) => {
+      const tenantId = tenantOf(req);
       const gb = gbm.get(req.params.id);
-      if (!gb) throw business('团购不存在');
+      if (!gb || gb.tenantId !== tenantId) throw business('团购不存在');
       ok(res, gb);
     }));
     app.post('/api/wx/groupbuys/:id/join', authMember, wrap(async (req, res) => {
@@ -238,8 +245,9 @@ class ApiService {
       ok(res, fm.list(tenantOf(req)).filter(f => f.status === 'open'));
     }));
     app.get('/api/wx/forms/:id', wrap(async (req, res) => {
+      const tenantId = tenantOf(req);
       const f = fm.get(req.params.id);
-      if (!f) throw business('表单不存在');
+      if (!f || f.tenantId !== tenantId) throw business('表单不存在');
       ok(res, f);
     }));
     app.post('/api/wx/forms/:id/submit', authMember, wrap(async (req, res) => {
@@ -254,6 +262,9 @@ class ApiService {
       ok(res, am.listServices(tenantOf(req)).filter(s => s.enabled).map(s => ({ ...s, price: s.price / 100 })));
     }));
     app.get('/api/wx/appointments/slots', wrap(async (req, res) => {
+      const tenantId = tenantOf(req);
+      const svc = store.findById('appointmentServices', req.query.serviceId);
+      if (!svc || svc.tenantId !== tenantId) throw business('服务不存在');
       ok(res, am.querySlots(req.query.serviceId, req.query.date));
     }));
     app.post('/api/wx/appointments', authMember, wrap(async (req, res) => {
@@ -317,7 +328,7 @@ class ApiService {
     // 管理员登录
     app.post('/api/admin/login', async (req, res) => {
       try {
-        const tenantId = req.body.tenantId || config.tenant.defaultId;
+        const tenantId = tenantOf(req);
         const admin = adminService.authenticate(req.body.username, tenantId, req.body.password);
         if (!admin) return res.status(401).json({ success: false, error: '用户名或密码错误' });
         auditLog.record({ tenantId, actorType: 'admin', actorId: admin.id, actorName: admin.username, action: 'admin.login', detail: { username: admin.username }, ip: clientIp(req) });

@@ -10,7 +10,8 @@
     "test:http": "node tests/http-auth.js",
     "test:pay": "node tests/wechatpay-v3.js",
     "test:validation": "node tests/http-validation.js",
-    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation"
+    "test:tenant": "node tests/http-tenant.js",
+    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation && npm run test:tenant"
   },
   "keywords": [
     "wechat",

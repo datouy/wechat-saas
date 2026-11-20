@@ -24,6 +24,7 @@ const FormManager = require('./core/FormManager');
 const AppointmentManager = require('./core/AppointmentManager');
 const StatsService = require('./core/StatsService');
 const AuditLog = require('./core/AuditLog');
+const TenantManager = require('./core/TenantManager');
 const WechatService = require('./services/WechatService');
 const ApiService = require('./api/ApiService');
 const seed = require('./core/seed');
@@ -80,6 +81,7 @@ class WechatSaas {
     });
 
     this.store = new JsonStore(config.dataDir);
+    this.tenantManager = new TenantManager(this.store);
     this.auth = new AuthService(config.auth);
     this.adminService = new AdminService(this.store, this.auth, config.admin);
     this.wechat = new WechatService(config.wechat);
@@ -113,6 +115,7 @@ class WechatSaas {
     console.log('========================================');
 
     this.store.initialize();
+    this.tenantManager.ensureDefault(this.config.tenant.defaultId, this.config.tenant.defaultName);
     await seed.run(this.store, this.productManager, this.couponManager, this.formManager, this.appointmentManager, this.config);
     this.adminService.ensureDefaultAdmin(this.config.tenant.defaultId);
     this.groupBuyManager.initialize();
@@ -121,6 +124,7 @@ class WechatSaas {
     this.apiService = new ApiService(this.app, {
       store: this.store,
       config,
+      tenantManager: this.tenantManager,
       auth: this.auth,
       adminService: this.adminService,
       productManager: this.productManager,
