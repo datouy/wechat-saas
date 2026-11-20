@@ -1,24 +1,24 @@
 <view class="container" wx:if="{{product}}">
-  <view class="big-thumb"></view>
-  <view class="card">
-    <view style="font-size:34rpx;font-weight:700">{{product.name}}</view>
-    <view class="muted" style="margin:10rpx 0">{{product.description}}</view>
-    <view><text class="price" style="font-size:40rpx">¥{{product.price}}</text> <text class="muted">原价 ¥{{product.originalPrice}} · 库存 {{product.stock}}</text></view>
+  <image wx:if="{{product.image}}" class="big-thumb" src="{{product.image}}" mode="aspectFill"></image>
+  <view wx:else class="big-thumb"></view>
+  <view class="product-heading">
+    <view class="product-title">{{product.name}}</view>
+    <view class="muted product-meta">{{product.unit}} · 库存 {{product.stock}}</view>
+    <view class="price product-price" wx:if="{{!groupBuy}}">¥{{product.price}}</view>
   </view>
 
-  <view class="card">
-    <view class="row"><text>购买数量</text>
-      <view class="qty">
-        <button bindtap="minus">-</button><text>{{qty}}</text><button bindtap="plus">+</button>
-      </view>
+  <view class="card group-card" wx:if="{{groupBuy}}">
+    <view class="row">
+      <text class="group-name">{{groupBuy.title}}</text>
+      <text class="tag">{{groupStatusText}}</text>
     </view>
-    <view class="row"><text>使用积分</text>
-      <input type="number" value="{{usePoints}}" bindinput="onPoints" style="width:180rpx;text-align:right;border:1rpx solid #e5e7eb;border-radius:8rpx;padding:8rpx" placeholder="0"/>
+    <view class="price group-price">¥{{groupPriceYuan}}</view>
+    <view class="progress"><view class="progress-value" style="width:{{groupBuy.participantCount/groupBuy.minParticipants*100}}%"></view></view>
+    <view class="row group-progress-row">
+      <text class="muted">{{groupBuy.participantCount}}/{{groupBuy.minParticipants}} 人</text>
+      <text class="muted">原价 ¥{{product.price}}</text>
     </view>
-    <view class="muted">我的积分余额：{{pointsBalance}}</view>
   </view>
 
-  <view class="card">
-    <button class="btn-primary" bindtap="createOrder">立即下单</button>
-  </view>
+  <button class="btn-primary action" bindtap="primaryAction" disabled="{{groupCtaDisabled}}">{{groupBuy ? groupCtaText : '去结算'}}</button>
 </view>

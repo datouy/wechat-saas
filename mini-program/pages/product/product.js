@@ -1,57 +1,68 @@
 var api = require('../../utils/api');
+
 Page({
-  data: { product: null, qty: 1, usePoints: '', pointsBalance: 0 },
+  data: {
+    product: null,
+    groupBuy: null,
+    groupPriceYuan: '',
+    groupStatusText: '',
+    groupCtaText: '',
+    groupCtaDisabled: false,
+    loading: true
+  },
   onLoad(options) {
     this.productId = options.id;
+    this.groupBuyId = options.groupBuyId || '';
     this.load();
   },
   load() {
     var that = this;
-    Promise.all([api.request('/api/wx/products/' + this.productId), api.request('/api/wx/member/' + api.memberId() + '/points')])
-      .then(function(r) {
-        that.setData({ product: r[0], pointsBalance: r[1].balance });
-      }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    var requests = [api.request('/api/wx/products/' + this.productId)];
+    if (this.groupBuyId) requests.push(api.request('/api/wx/groupbuys/' + this.groupBuyId));
+    Promise.all(requests).then(function(r) {
+      that.setData({ product: r[0], groupBuy: r[1] || null, loading: false });
+      if (r[1]) that.updateGroup(r[1]);
+    }).catch(function(e) {
+      that.setData({ loading: false });
+      wx.showToast({ title: e.message, icon: 'none' });
+    });
   },
-  plus() { this.setData({ qty: this.data.qty + 1 }); },
-  minus() { if (this.data.qty > 1) this.setData({ qty: this.data.qty - 1 }); },
-  onPoints(e) { this.setData({ usePoints: e.detail.value }); },
-  createOrder() {
+  updateGroup(gb) {
+    var joined = (gb.participants || []).some(function(p) { return p.memberId === api.memberId(); });
+    var statusText = { active: '进行中', success: '已成团', closed: '已结束', cancelled: '已取消' }[gb.status] || gb.status;
+    var cta = '加入团购';
+    var disabled = false;
+    if (gb.status === 'success') cta = joined ? '去结算' : '参团并购买';
+    else if (gb.status === 'active' && joined) { cta = '还差 ' + gb.remaining + ' 人成团'; disabled = true; }
+    else if (gb.status === 'closed' || gb.status === 'cancelled') { cta = '活动已结束'; disabled = true; }
+    this.setData({
+      groupBuy: gb,
+      groupPriceYuan: (gb.groupPrice / 100).toFixed(2),
+      groupStatusText: statusText,
+      groupCtaText: cta,
+      groupCtaDisabled: disabled
+    });
+  },
+  primaryAction() {
     var that = this;
-    api.request('/api/wx/orders', 'POST', {
-      items: [{ productId: this.productId, quantity: this.data.qty }],
-      options: { usePoints: Number(this.data.usePoints) || 0 }
-    }).then(function(order) {
-      wx.showModal({
-        title: '下单成功',
-        content: '实付 ¥' + (order.payAmount / 100).toFixed(2) + '，是否立即支付？',
-        success: function(r) {
-          if (r.confirm) {
-            api.request('/api/wx/orders/' + order.id + '/pay', 'POST', {}).then(function(res) {
-              if (res.mock) {
-                wx.showToast({ title: '模拟支付成功' });
-                wx.switchTab({ url: '/pages/orders/orders' });
-                return;
-              }
-              wx.requestPayment({
-                timeStamp: res.payParams.timeStamp,
-                nonceStr: res.payParams.nonceStr,
-                package: res.payParams.package,
-                signType: res.payParams.signType,
-                paySign: res.payParams.paySign,
-                success: function() {
-                  wx.showToast({ title: '支付成功' });
-                  wx.switchTab({ url: '/pages/orders/orders' });
-                },
-                fail: function() {
-                  wx.showToast({ title: '支付已取消或失败', icon: 'none' });
-                }
-              });
-            }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
-          } else {
-            wx.switchTab({ url: '/pages/orders/orders' });
-          }
-        }
-      });
+    if (!this.groupBuyId) return this.checkout();
+    var gb = this.data.groupBuy;
+    if (!gb) return;
+    var joined = (gb.participants || []).some(function(p) { return p.memberId === api.memberId(); });
+    if (joined) {
+      if (gb.status === 'success') return this.checkout();
+      return wx.showToast({ title: '还差 ' + gb.remaining + ' 人成团', icon: 'none' });
+    }
+    api.request('/api/wx/groupbuys/' + gb.id + '/join', 'POST', {}).then(function(updated) {
+      updated.product = that.data.product;
+      that.updateGroup(updated);
+      if (updated.status === 'success') that.checkout();
+      else wx.showToast({ title: '已参团，还差 ' + updated.remaining + ' 人', icon: 'none' });
     }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+  },
+  checkout() {
+    var url = '/pages/checkout/checkout?id=' + this.productId;
+    if (this.groupBuyId) url += '&groupBuyId=' + this.groupBuyId;
+    wx.navigateTo({ url: url });
   }
 });

@@ -4,31 +4,24 @@
     "pages/product/product",
     "pages/orders/orders",
     "pages/mine/mine",
+    "pages/checkout/checkout",
     "pages/forms/forms",
     "pages/booking/booking"
   ],
   "window": {
     "navigationBarTitleText": "邻里团",
-    "navigationBarBackgroundColor": "#07c160",
-    "navigationBarTextStyle": "white",
-    "backgroundColor": "#f5f7fa"
+    "navigationBarBackgroundColor": "#f7f7f4",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f7f7f4"
   },
   "tabBar": {
     "color": "#6b7280",
-    "selectedColor": "#07c160",
+    "selectedColor": "#1f1f1d",
     "backgroundColor": "#ffffff",
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "首页"
-      },
-      {
-        "pagePath": "pages/forms/forms",
-        "text": "问卷"
-      },
-      {
-        "pagePath": "pages/booking/booking",
-        "text": "预约"
+        "text": "团"
       },
       {
         "pagePath": "pages/orders/orders",

@@ -173,6 +173,16 @@ class ApiService {
       });
     }));
 
+    app.get('/api/wx/checkout', authMember, wrap(async (req, res) => {
+      ok(res, {
+        deliveryFee: Number(config.orders.deliveryFee) || 0,
+        points: {
+          enabled: config.points.enabled !== false,
+          maxPercentPerOrder: Number(config.points.maxPercentPerOrder) || 0
+        }
+      });
+    }));
+
     app.get('/api/wx/coupons/templates', wrap(async (req, res) => {
       ok(res, cm.listTemplates(tenantOf(req)).filter(t => t.enabled).map(c => this._couponView(c)));
     }));

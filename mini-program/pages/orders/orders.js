@@ -1,4 +1,5 @@
 var api = require('../../utils/api');
+var payment = require('../../utils/payment');
 var STATUS = { pending:'待支付', paid:'待发货', delivering:'配送中', completed:'已完成', cancelled:'已取消' };
 Page({
   data: { orders: [] },
@@ -21,7 +22,9 @@ Page({
   },
   pay(e) {
     var that = this, id = e.currentTarget.dataset.id;
-    api.request('/api/wx/orders/' + id + '/pay', 'POST', { memberId: api.memberId() }).then(function(res) {
+    payment.requestConfiguredSubscriptions().then(function() {
+      return payment.payOrder(id);
+    }).then(function(res) {
       wx.showToast({ title: res.mock ? '模拟支付成功' : '支付成功' });
       that.load();
     }).catch(function(err) { wx.showToast({ title: err.message, icon: 'none' }); });

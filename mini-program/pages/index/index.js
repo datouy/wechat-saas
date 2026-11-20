@@ -1,6 +1,7 @@
 var api = require('../../utils/api');
+
 Page({
-  data: { tenantName: '邻里团', products: [], groupBuys: [] },
+  data: { tenantName: '邻里团', products: [], groupBuys: [], loading: true },
   onShow() { this.load(); },
   load() {
     var that = this;
@@ -9,14 +10,23 @@ Page({
         tenantName: d.tenant.name,
         products: d.products,
         groupBuys: d.groupBuys.map(function(g) {
-          return Object.assign({}, g, { groupPriceYuan: (g.groupPrice / 100).toFixed(2) });
-        })
+          return Object.assign({}, g, {
+            groupPriceYuan: (g.groupPrice / 100).toFixed(2),
+            progress: Math.min(100, Math.round(g.participantCount / g.minParticipants * 100))
+          });
+        }),
+        loading: false
       });
-    }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    }).catch(function(e) {
+      that.setData({ loading: false });
+      wx.showToast({ title: e.message, icon: 'none' });
+    });
   },
   goProduct(e) { wx.navigateTo({ url: '/pages/product/product?id=' + e.currentTarget.dataset.id }); },
   goGroupBuy(e) {
     var gb = this.data.groupBuys.find(function(x) { return x.id === e.currentTarget.dataset.id; });
-    if (gb && gb.product) wx.navigateTo({ url: '/pages/product/product?id=' + gb.product.id });
-  }
+    if (gb && gb.product) wx.navigateTo({ url: '/pages/product/product?id=' + gb.product.id + '&groupBuyId=' + gb.id });
+  },
+  goBooking() { wx.navigateTo({ url: '/pages/booking/booking' }); },
+  goForms() { wx.navigateTo({ url: '/pages/forms/forms' }); }
 });

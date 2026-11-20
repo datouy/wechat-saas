@@ -1,4 +1,13 @@
-.big-thumb { width:100%; height:380rpx; background:#e5e7eb; border-radius:20rpx; margin-bottom:20rpx; }
-.row { display:flex; align-items:center; justify-content:space-between; padding:16rpx 0; }
-.qty { display:flex; align-items:center; gap:20rpx; }
-.qty button { width:56rpx; height:56rpx; line-height:56rpx; text-align:center; background:#f3f4f6; border-radius:12rpx; }
+.big-thumb { width:100%; height:520rpx; background:#e9e9e4; border-radius:18rpx; }
+.product-heading { padding:28rpx 4rpx 20rpx; }
+.product-title { font-size:38rpx; font-weight:700; letter-spacing:-1rpx; }
+.product-meta { margin:8rpx 0; }
+.product-price { font-size:40rpx; }
+.group-card { margin-top:8rpx; }
+.group-name { font-weight:600; }
+.group-price { margin-top:8rpx; font-size:38rpx; }
+.progress { height:6rpx; margin:20rpx 0 8rpx; overflow:hidden; background:#edede8; border-radius:99rpx; }
+.progress-value { height:100%; background:#1f6f4a; border-radius:99rpx; }
+.group-progress-row { padding-bottom:0; }
+.action { margin-top:20rpx; }
+.action[disabled] { background:#d8d8d3 !important; color:#6f6f69 !important; }

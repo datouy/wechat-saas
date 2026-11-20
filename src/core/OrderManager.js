@@ -8,7 +8,7 @@
  */
 
 const { business } = require('../errors');
-const { randomUUID: uuidv4 } = require('crypto');
+const { randomUUID: uuidv4, randomInt } = require('crypto');
 
 class OrderManager {
   constructor(store, deps) {
@@ -46,6 +46,15 @@ class OrderManager {
     if (!Array.isArray(items) || items.length === 0) throw business('订单商品不能为空');
     const member = this.members.get(memberId);
     if (!member || member.tenantId !== tenantId) throw business('会员不存在');
+    const deliveryType = options.deliveryType === 'pickup' ? 'pickup' : 'delivery';
+    let deliveryAddress = null;
+    if (deliveryType === 'delivery') {
+      if (options.deliveryType === 'delivery' && !options.addressId) throw business('请选择收货地址');
+      if (options.addressId) {
+        deliveryAddress = (member.addresses || []).find(a => a.id === options.addressId) || null;
+        if (!deliveryAddress) throw business('收货地址无效');
+      }
+    }
 
     // 1. 校验商品、库存与团购价资格
     const orderItems = [];
@@ -99,7 +108,7 @@ class OrderManager {
     }
 
     // 4. 配送费与实付
-    const deliveryFee = Math.round(Number(this.config.deliveryFee) * 100) || 0;
+    const deliveryFee = deliveryType === 'pickup' ? 0 : (Math.round(Number(this.config.deliveryFee) * 100) || 0);
     const payAmount = Math.max(0, goodsAmount - couponDiscount - pointsDiscount + deliveryFee);
 
     const now = new Date();
@@ -140,8 +149,10 @@ class OrderManager {
       deliveryFee,
       payAmount,
       status: 'pending',
-      address: options.addressId ? (member.addresses.find(a => a.id === options.addressId) || null) : null,
-      deliveryType: options.deliveryType === 'pickup' ? 'pickup' : 'delivery',
+      address: deliveryAddress,
+      deliveryType,
+      pickupCode: deliveryType === 'pickup' ? String(randomInt(100000, 1000000)) : null,
+      pickupVerifiedAt: null,
       remark: String(options.remark || '').slice(0, 100),
       groupBuyId: options.groupBuyId || null,
       payInfo: null,
