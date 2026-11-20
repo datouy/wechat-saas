@@ -9,7 +9,10 @@ const { business } = require('../errors');
 const { cnDate } = require('./time');
 
 class AppointmentManager {
-  constructor(store) { this.store = store; }
+  constructor(store, notifications) {
+    this.store = store;
+    this.notifications = notifications || null;
+  }
 
   /** 创建可预约服务 */
   createService(tenantId, data) {
@@ -75,6 +78,10 @@ class AppointmentManager {
       createdAt: new Date().toISOString()
     };
     this.store.insert('appointments', appt);
+    if (this.notifications) {
+      Promise.resolve(this.notifications.notifyAppointment(appt, 'appointmentBooked'))
+        .catch(() => {});
+    }
     return appt;
   }
 
@@ -84,6 +91,16 @@ class AppointmentManager {
     if (memberId && a.memberId !== memberId) throw business('无权操作');
     if (a.status !== 'booked') throw business('预约已不可取消');
     return this.store.update('appointments', appointmentId, { status: 'cancelled', cancelledAt: new Date().toISOString() });
+  }
+
+  complete(appointmentId, tenantId) {
+    const appointment = this.store.findById('appointments', appointmentId);
+    if (!appointment || (tenantId && appointment.tenantId !== tenantId)) throw business('预约不存在');
+    if (appointment.status !== 'booked') throw business('仅已预约记录可完成');
+    return this.store.update('appointments', appointmentId, {
+      status: 'completed',
+      completedAt: new Date().toISOString()
+    });
   }
 
   listByTenant(tenantId, opts = {}) {

@@ -93,6 +93,35 @@ class WechatService {
     return result.access_token;
   }
 
+  /** 发送小程序订阅消息；模板字段由 NotificationService 按配置映射。 */
+  async sendSubscribeMessage({ openid, templateId, page, data }) {
+    if (this.mock) {
+      return { errcode: 0, errmsg: 'ok', mock: true };
+    }
+    if (!openid || !templateId) throw business('订阅消息缺少 openid 或模板 ID');
+
+    const send = async (token) => {
+      const body = { touser: openid, template_id: templateId, data: data || {} };
+      if (page) body.page = page;
+      return this._request({
+        hostname: 'api.weixin.qq.com',
+        path: '/cgi-bin/message/subscribe/send?access_token=' + encodeURIComponent(token),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, JSON.stringify(body));
+    };
+
+    let result = await send(await this.getAccessToken());
+    if (result && [40001, 42001].includes(Number(result.errcode))) {
+      this.accessTokenCache = null;
+      result = await send(await this.getAccessToken());
+    }
+    if (result && result.errcode) {
+      throw business('订阅消息发送失败: ' + result.errcode + ' ' + (result.errmsg || ''));
+    }
+    return result;
+  }
+
   // ===================== 微信支付 v3 =====================
 
   /** RSA-SHA256 签名（商户私钥），返回 base64 */

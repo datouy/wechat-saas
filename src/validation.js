@@ -74,6 +74,26 @@ const schemas = {
     }).optional().default({})
   }),
 
+  orderDeliver: z.object({
+    company: z.string().trim().max(50).optional().default(''),
+    trackingNo: z.string().trim().max(64).optional().default('')
+  }),
+
+  orderBatchDeliver: z.object({
+    orderIds: z.array(id).min(1, '请选择订单').max(100),
+    company: z.string().trim().max(50).optional().default(''),
+    trackingNo: z.string().trim().max(64).optional().default('')
+  }),
+
+  orderPickupVerify: z.object({
+    pickupCode: z.string().trim().regex(/^\d{6}$/, '取货码应为6位数字')
+  }),
+
+  orderRefund: z.object({
+    amount: money.positive('退款金额必须大于0').optional(),
+    reason: z.string().trim().max(80).optional().default('商家退款')
+  }),
+
   appointmentServiceCreate: z.object({
     name: z.string().trim().min(1).max(30),
     price: positiveMoney,

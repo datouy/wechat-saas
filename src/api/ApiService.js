@@ -200,6 +200,13 @@ class ApiService {
       });
     }));
 
+    // 小程序在用户点击支付前获取模板 ID；未配置时返回空数组，不影响支付。
+    app.get('/api/wx/subscriptions', authMember, wrap(async (req, res) => {
+      ok(res, {
+        events: notifications.listTemplates(['orderPaid', 'orderDelivered', 'pickupCompleted', 'refundCompleted'])
+      });
+    }));
+
     app.get('/api/wx/checkout', authMember, wrap(async (req, res) => {
       ok(res, {
         deliveryFee: Number(config.orders.deliveryFee) || 0,
@@ -444,19 +451,42 @@ class ApiService {
       if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
       ok(res, orderDetail(o));
     }));
+    app.post('/api/admin/orders/batch-deliver', authAdmin, wrap(async (req, res) => {
+      const body = validate('orderBatchDeliver', req.body);
+      const result = om.batchDeliver(body.orderIds, {
+        company: body.company,
+        trackingNo: body.trackingNo
+      }, req.tenantId);
+      audit(req, 'order.batch-deliver', 'order', body.orderIds.join(','), {
+        company: body.company,
+        trackingNo: body.trackingNo,
+        successCount: result.successCount,
+        failureCount: result.failureCount
+      });
+      ok(res, result);
+    }));
     app.post('/api/admin/orders/:id/deliver', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);
       if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
-      const logistics = { company: req.body.company, trackingNo: req.body.trackingNo };
+      const logistics = validate('orderDeliver', req.body);
       ok(res, om.deliver(req.params.id, logistics));
       audit(req, 'order.deliver', 'order', req.params.id, { orderNo: o.orderNo });
+    }));
+    app.post('/api/admin/orders/:id/verify-pickup', authAdmin, wrap(async (req, res) => {
+      const o = om.get(req.params.id);
+      if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
+      const body = validate('orderPickupVerify', req.body);
+      const result = om.verifyPickup(req.params.id, body.pickupCode, req.tenantId);
+      audit(req, 'order.verify-pickup', 'order', req.params.id, { orderNo: o.orderNo, alreadyCompleted: result.alreadyCompleted });
+      ok(res, result);
     }));
     app.post('/api/admin/orders/:id/refund', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);
       if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
-      const amount = req.body.amount !== undefined ? Math.round(Number(req.body.amount) * 100) : undefined;
-      ok(res, await om.refund(req.params.id, req.body.reason, amount));
-      audit(req, 'order.refund', 'order', req.params.id, { orderNo: o.orderNo, reason: req.body.reason, amount });
+      const body = validate('orderRefund', req.body);
+      const amount = body.amount !== undefined ? Math.round(Number(body.amount) * 100) : undefined;
+      ok(res, await om.refund(req.params.id, body.reason, amount));
+      audit(req, 'order.refund', 'order', req.params.id, { orderNo: o.orderNo, reason: body.reason, amount });
     }));
 
     app.get('/api/admin/members', authAdmin, wrap(async (req, res) => {
@@ -512,6 +542,20 @@ class ApiService {
     app.get('/api/admin/appointments', authAdmin, wrap(async (req, res) => {
       ok(res, paginate(req, am.listByTenant(req.tenantId, { date: req.query.date, status: req.query.status })));
     }));
+    app.post('/api/admin/appointments/:id/complete', authAdmin, wrap(async (req, res) => {
+      const appointment = store.findById('appointments', req.params.id);
+      if (!appointment || appointment.tenantId !== req.tenantId) throw business('预约不存在');
+      const updated = am.complete(req.params.id, req.tenantId);
+      audit(req, 'appointment.complete', 'appointment', req.params.id, { serviceName: appointment.serviceName });
+      ok(res, updated);
+    }));
+    app.post('/api/admin/appointments/:id/cancel', authAdmin, wrap(async (req, res) => {
+      const appointment = store.findById('appointments', req.params.id);
+      if (!appointment || appointment.tenantId !== req.tenantId) throw business('预约不存在');
+      const updated = am.cancel(req.params.id);
+      audit(req, 'appointment.cancel', 'appointment', req.params.id, { serviceName: appointment.serviceName });
+      ok(res, updated);
+    }));
 
     app.get('/api/admin/audit-logs', authAdmin, wrap(async (req, res) => {
       ok(res, paginate(req, auditLog.listByTenant(req.tenantId, { action: req.query.action, actorType: req.query.actorType })));
@@ -529,8 +573,18 @@ class ApiService {
         wechatMock: wechat.mock,
         tenantId: req.tenantId,
         uptime: process.uptime(),
-        nodeVersion: process.version
+        nodeVersion: process.version,
+        lowStockThreshold: config.inventory.lowStockThreshold,
+        endingSoonHours: config.today.endingSoonHours,
+        subscribeEvents: notifications.listTemplates()
       });
+    }));
+
+    app.get('/api/admin/subscriptions', authAdmin, wrap(async (req, res) => {
+      const recent = store.find('notifications', n => n.tenantId === req.tenantId)
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 20);
+      ok(res, { templates: notifications.listTemplates(), recent });
     }));
 
     // 前端页面

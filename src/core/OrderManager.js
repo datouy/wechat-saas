@@ -18,6 +18,7 @@ class OrderManager {
     this.coupons = deps.couponManager;
     this.members = deps.memberManager;
     this.wechat = deps.wechatService;
+    this.notifications = deps.notifications || null;
     this.groupBuys = deps.groupBuyManager || null;
     this.config = deps.config || { payTimeoutMinutes: 30, autoCompleteDays: 3, deliveryFee: 0 };
     this.timer = null;
@@ -207,6 +208,12 @@ class OrderManager {
     this.points.earnByOrder(order.memberId, order.orderNo, order.payAmount / 100);
     for (const it of order.items) this.products.increaseSales(it.productId, it.quantity);
 
+    if (this.notifications) {
+      const paidOrder = this.store.findById('orders', order.id) || { ...order, status: 'paid' };
+      Promise.resolve(this.notifications.notifyOrder(paidOrder, 'orderPaid', { status: '已支付', time: paidOrder.paidAt }))
+        .catch(() => {});
+    }
+
     return true;
   }
 
@@ -307,7 +314,15 @@ class OrderManager {
       patch.status = 'refunded';
       patch.refundedAt = new Date().toISOString();
     }
-    this.store.update('orders', order.id, patch);
+    const updated = this.store.update('orders', order.id, patch);
+    if (this.notifications) {
+      Promise.resolve(this.notifications.notifyOrder(updated || { ...order, ...patch }, 'refundCompleted', {
+        status: isFull ? '已退款' : '部分退款',
+        amount: (amount / 100).toFixed(2),
+        time: new Date().toISOString()
+      })).catch(() => {});
+    }
+    return updated;
   }
 
   /** 取消订单（仅待支付；已支付请走退款流程） */
@@ -342,7 +357,64 @@ class OrderManager {
         trackingNo: String(logistics.trackingNo || '').slice(0, 64)
       };
     }
-    return this.store.update('orders', order.id, patch);
+    const updated = this.store.update('orders', order.id, patch);
+    if (this.notifications) {
+      Promise.resolve(this.notifications.notifyOrder(updated || { ...order, ...patch }, 'orderDelivered', {
+        status: order.deliveryType === 'pickup' ? '待自提' : '已发货',
+        time: patch.deliveredAt
+      })).catch(() => {});
+    }
+    return updated;
+  }
+
+  /** 批量发货；逐单返回结果，单笔失败不会阻断其他订单。 */
+  batchDeliver(orderIds, logistics, tenantId) {
+    if (!Array.isArray(orderIds) || orderIds.length === 0) throw business('请选择订单');
+    const ids = [...new Set(orderIds.map(String))].slice(0, 100);
+    const delivered = [];
+    const failures = [];
+    for (const id of ids) {
+      const order = this.store.findById('orders', id);
+      if (!order || order.tenantId !== tenantId) {
+        failures.push({ id, error: '订单不存在' });
+        continue;
+      }
+      try {
+        if (order.deliveryType === 'pickup') throw business('自提订单请使用取货码核销');
+        delivered.push(this.deliver(id, logistics));
+      } catch (e) {
+        failures.push({ id, orderNo: order.orderNo, error: e.message });
+      }
+    }
+    return {
+      successCount: delivered.length,
+      failureCount: failures.length,
+      delivered,
+      failures
+    };
+  }
+
+  /** 自提核销：校验取货码后将已支付订单直接完成。 */
+  verifyPickup(orderId, pickupCode, tenantId) {
+    const order = this.store.findById('orders', orderId);
+    if (!order || (tenantId && order.tenantId !== tenantId)) throw business('订单不存在');
+    if (order.deliveryType !== 'pickup') throw business('该订单不是自提订单');
+    if (String(order.pickupCode || '') !== String(pickupCode || '')) throw business('取货码不正确');
+    if (order.status === 'completed' && order.pickupVerifiedAt) return { alreadyCompleted: true, order };
+    if (order.status !== 'paid') throw business('仅待自提订单可核销');
+    const now = new Date().toISOString();
+    const updated = this.store.update('orders', order.id, {
+      status: 'completed',
+      pickupVerifiedAt: now,
+      completedAt: now
+    });
+    if (this.notifications) {
+      Promise.resolve(this.notifications.notifyOrder(updated || { ...order, status: 'completed' }, 'pickupCompleted', {
+        status: '已取货',
+        time: now
+      })).catch(() => {});
+    }
+    return { alreadyCompleted: false, order: updated };
   }
 
   /** 确认收货 */
@@ -366,7 +438,11 @@ class OrderManager {
 
   listByTenant(tenantId, opts = {}) {
     let list = this.store.find('orders', o => o.tenantId === tenantId);
-    if (opts.status) list = list.filter(o => o.status === opts.status);
+    if (opts.status === 'refunding') {
+      list = list.filter(o => o.refund && o.refund.status === 'refunding');
+    } else if (opts.status) {
+      list = list.filter(o => o.status === opts.status);
+    }
     if (opts.keyword) {
       const k = opts.keyword.toLowerCase();
       list = list.filter(o => o.orderNo.toLowerCase().includes(k));

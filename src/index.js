@@ -27,6 +27,7 @@ const StatsService = require('./core/StatsService');
 const TodayService = require('./core/TodayService');
 const AuditLog = require('./core/AuditLog');
 const TenantManager = require('./core/TenantManager');
+const NotificationService = require('./core/NotificationService');
 const WechatService = require('./services/WechatService');
 const ApiService = require('./api/ApiService');
 const seed = require('./core/seed');
@@ -107,6 +108,7 @@ class WechatSaas {
     this.adminService = new AdminService(this.store, this.auth, config.admin);
     this.wechat = new WechatService(config.wechat);
     this.memberManager = new MemberManager(this.store, this.wechat);
+    this.notifications = new NotificationService(this.store, this.wechat, this.memberManager, config.wechat.subscribeTemplates);
     this.pointsManager = new PointsManager(this.store, config.points);
     this.couponManager = new CouponManager(this.store, config.coupon);
     this.productManager = new ProductManager(this.store);
@@ -116,12 +118,13 @@ class WechatSaas {
       pointsManager: this.pointsManager,
       couponManager: this.couponManager,
       memberManager: this.memberManager,
+      notifications: this.notifications,
       wechatService: this.wechat,
       config: config.orders
     });
     this.reconciliation = new ReconciliationService(this.store, this.orderManager, this.wechat);
     this.formManager = new FormManager(this.store);
-    this.appointmentManager = new AppointmentManager(this.store);
+    this.appointmentManager = new AppointmentManager(this.store, this.notifications);
     this.statsService = new StatsService(this.store);
     this.todayService = new TodayService(this.store, this.statsService, {
       lowStockThreshold: config.inventory.lowStockThreshold,
@@ -163,6 +166,7 @@ class WechatSaas {
       appointmentManager: this.appointmentManager,
       statsService: this.statsService,
       todayService: this.todayService,
+      notifications: this.notifications,
       auditLog: this.auditLog,
       reconciliation: this.reconciliation,
       wechat: this.wechat
