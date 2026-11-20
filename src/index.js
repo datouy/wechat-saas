@@ -39,8 +39,16 @@ class WechatSaas {
     this.logger = new Logger(config.log.level);
     this.app = express();
 
-    // 安全响应头（CSP 关闭：管理后台当前使用内联样式/脚本，重构后再启用）
-    this.app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+    // 安全响应头（管理后台已外置 CSS/JS，启用严格 CSP：禁内联脚本与事件处理器）
+    this.app.use(helmet({
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: {
+        directives: {
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"]
+        }
+      }
+    }));
 
     // 请求 ID 与访问日志
     this.app.use((req, res, next) => {
