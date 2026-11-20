@@ -117,12 +117,12 @@ wechat-saas/
 npm run test:all
 ```
 
-- `npm test`：核心业务全链路（28 项）
+- `npm test`：核心业务全链路（33 项）
 - `npm run test:http`：会员/管理员令牌、越权访问、租户隔离（12 项）
-- `npm run test:pay`：微信支付 v3 RSA 签名 / 回调验签 / AES-GCM 解密（4 项）
+- `npm run test:pay`：微信支付 v3 RSA 签名 / 回调验签 / AES-GCM 解密（5 项）
 - `npm run test:validation`：参数校验、分页、安全头、审计日志（11 项）
 - `npm run test:tenant`：多租户隔离、未知租户拒绝、登录不信任自报 tenantId（6 项）
-- `npm run test:sqlite`：SQLite 后端核心业务全链路（28 项）
+- `npm run test:sqlite`：SQLite 后端核心业务全链路（33 项）
 - `npm run test:concurrency`：多进程并发扣库存，验证原子扣减不超卖
 
 ## 🚀 部署
@@ -143,8 +143,10 @@ docker compose up -d --build
 - **交易一致性**：库存「可用+预留」语义（下单扣可用、支付后记销量）、优惠券 reserved/used/released、成团后仍可参团、已支付订单需走退款
 - **参数校验**：Zod 入口校验，统一错误码 + requestId
 - **存储**：JSON 原子写入与内置 SQLite 双后端；SQLite 提供跨集合 ACID 事务与原子条件扣减防超卖（`DATA_STORE=sqlite` 启用）
-- **安全**：Helmet、登录/全局限流、管理后台存储型 XSS 转义、CORS 白名单预留
+- **安全**：Helmet 严格 CSP（禁内联脚本注入）、登录/全局限流、管理后台存储型 XSS 转义、CORS 白名单
 - **分页/审计**：管理端列表分页、操作审计日志
+- **对账**：微信交易对账单下载 + 本地订单自动比对，识别金额不符/漏单/多单/退款差异
+- **多实例**：SQLite WAL + busy_timeout、定时器可关闭开关、限流可交由网关（见 docs/多实例部署.md）
 
 ## ⚠️ 当前边界
 
