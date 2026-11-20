@@ -3,165 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>邻里团 SaaS · 商家管理后台</title>
+<meta name="color-scheme" content="light">
+<title>邻里团</title>
 <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
-<div class="layout">
-<aside class="sidebar">
-  <div class="logo">
-    <div class="logo-icon">🛒</div>
-    <div><div class="logo-name">邻里团</div><div class="logo-sub">SaaS v1.0</div></div>
-  </div>
-  <div class="nav-title">经营</div>
-  <div class="nav-item active" data-page="dashboard">📊 经营概览</div>
-  <div class="nav-item" data-page="products">🛍 商品管理</div>
-  <div class="nav-item" data-page="groupbuys">🎯 团购活动</div>
-  <div class="nav-item" data-page="orders">📦 订单管理</div>
-  <div class="nav-title">客户</div>
-  <div class="nav-item" data-page="members">👥 会员中心</div>
-  <div class="nav-item" data-page="coupons">🎟 优惠券</div>
-  <div class="nav-title">工具</div>
-  <div class="nav-item" data-page="forms">📝 问卷表单</div>
-  <div class="nav-item" data-page="appointments">📅 预约管理</div>
-  <div class="nav-title">系统</div>
-  <div class="nav-item" data-page="settings">⚙️ 系统设置</div>
-</aside>
-<main class="main">
-  <header class="header">
-    <div class="page-title" id="pageTitle">经营概览</div>
-    <div class="header-right">
-      <span class="badge mock" id="wxMode">微信: 模拟模式</span>
-      <button class="icon-btn" id="themeBtn">🌓</button>
-    </div>
-  </header>
-
-  <!-- 概览 -->
-  <section class="page active" id="page-dashboard">
-    <div class="cards" id="statCards"></div>
-    <div class="panel"><div class="panel-head">近7日销售趋势</div><div class="panel-body"><div class="bars" id="trendBars"></div></div></div>
-    <div class="panel"><div class="panel-head">热销商品 Top5</div><div class="panel-body" id="topProducts"></div></div>
-  </section>
-
-  <!-- 商品 -->
-  <section class="page" id="page-products">
-    <div class="panel">
-      <div class="panel-head">新增商品</div>
-      <div class="panel-body">
-        <div class="form-grid">
-          <div class="field"><label>商品名称</label><input id="pName" placeholder="如：山东红富士苹果"></div>
-          <div class="field"><label>价格(元)</label><input id="pPrice" type="number" step="0.1" placeholder="29.9"></div>
-          <div class="field"><label>原价(元)</label><input id="pOriginal" type="number" step="0.1" placeholder="39.9"></div>
-          <div class="field"><label>库存</label><input id="pStock" type="number" placeholder="100"></div>
-          <div class="field"><label>单位</label><input id="pUnit" placeholder="5斤装"></div>
-          <div class="field"><label>分类</label><select id="pCategory"></select></div>
-          <div class="field full"><label>商品描述</label><textarea id="pDesc" placeholder="卖点描述"></textarea></div>
-        </div>
-        <div style="margin-top:14px"><button class="btn" data-act="add-product">＋ 添加商品</button></div>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar" aria-label="工作台导航">
+    <a class="brand" href="#/today" aria-label="邻里团工作台">
+      <span class="brand-mark" aria-hidden="true">邻</span>
+      <span class="brand-name">邻里团</span>
+    </a>
+    <nav class="primary-nav">
+      <a class="nav-link" data-nav="today" href="#/today">今天</a>
+      <a class="nav-link" data-nav="products" href="#/products">商品</a>
+      <a class="nav-link" data-nav="orders" href="#/orders">订单</a>
+      <a class="nav-link" data-nav="customers" href="#/customers">客户</a>
+    </nav>
+    <details class="more-nav" id="moreNav">
+      <summary>更多</summary>
+      <div class="more-links">
+        <a data-nav="group-buys" href="#/group-buys">团购</a>
+        <a data-nav="coupons" href="#/coupons">优惠券</a>
+        <a data-nav="surveys" href="#/surveys">问卷</a>
+        <a data-nav="appointments" href="#/appointments">预约</a>
+        <a data-nav="settings" href="#/settings">设置</a>
       </div>
-    </div>
-    <div class="panel"><div class="panel-head">商品列表</div><div class="panel-body" style="overflow-x:auto"><table id="productTable"></table></div></div>
-  </section>
+    </details>
+    <div class="sidebar-foot" id="sidebarFoot"></div>
+  </aside>
+  <button class="sidebar-backdrop" id="sidebarBackdrop" aria-label="关闭导航"></button>
 
-  <!-- 团购 -->
-  <section class="page" id="page-groupbuys">
-    <div class="panel">
-      <div class="panel-head">发起团购</div>
-      <div class="panel-body">
-        <div class="form-grid">
-          <div class="field"><label>选择商品</label><select id="gbProduct"></select></div>
-          <div class="field"><label>团购价(元)</label><input id="gbPrice" type="number" step="0.1" placeholder="24.9"></div>
-          <div class="field"><label>成团人数</label><input id="gbMin" type="number" placeholder="3"></div>
-          <div class="field"><label>持续小时</label><input id="gbHours" type="number" placeholder="24"></div>
-          <div class="field full"><label>活动标题</label><input id="gbTitle" placeholder="周末苹果团"></div>
-        </div>
-        <div style="margin-top:14px"><button class="btn" data-act="add-groupbuy">🎯 发起团购</button></div>
-      </div>
-    </div>
-    <div class="panel"><div class="panel-head">团购活动列表</div><div class="panel-body" style="overflow-x:auto"><table id="groupBuyTable"></table></div></div>
-  </section>
-
-  <!-- 订单 -->
-  <section class="page" id="page-orders">
-    <div class="panel">
-      <div class="panel-head">
-        <span>订单列表</span>
-        <select id="orderFilter" style="width:auto;padding:6px 10px">
-          <option value="">全部状态</option>
-          <option value="pending">待支付</option>
-          <option value="paid">待发货</option>
-          <option value="delivering">配送中</option>
-          <option value="completed">已完成</option>
-          <option value="cancelled">已取消</option>
-        </select>
-      </div>
-      <div class="panel-body" style="overflow-x:auto"><table id="orderTable"></table></div>
-    </div>
-  </section>
-
-  <!-- 会员 -->
-  <section class="page" id="page-members">
-    <div class="panel"><div class="panel-head">会员列表</div><div class="panel-body" style="overflow-x:auto"><table id="memberTable"></table></div></div>
-  </section>
-
-  <!-- 优惠券 -->
-  <section class="page" id="page-coupons">
-    <div class="panel">
-      <div class="panel-head">新建优惠券</div>
-      <div class="panel-body">
-        <div class="form-grid">
-          <div class="field"><label>券名称</label><input id="cName" placeholder="满50减8"></div>
-          <div class="field"><label>使用门槛(元)</label><input id="cThreshold" type="number" placeholder="50"></div>
-          <div class="field"><label>优惠金额(元)</label><input id="cAmount" type="number" placeholder="8"></div>
-          <div class="field"><label>有效期(天)</label><input id="cDays" type="number" placeholder="30"></div>
-          <div class="field"><label>每人限领</label><input id="cLimit" type="number" placeholder="1"></div>
-        </div>
-        <div style="margin-top:14px"><button class="btn" data-act="add-coupon">🎟 创建优惠券</button></div>
-      </div>
-    </div>
-    <div class="panel"><div class="panel-head">优惠券模板</div><div class="panel-body" style="overflow-x:auto"><table id="couponTable"></table></div></div>
-  </section>
-
-  <!-- 问卷 -->
-  <section class="page" id="page-forms">
-    <div class="panel">
-      <div class="panel-head">创建问卷（满意度调查 / 投票 / 报名）</div>
-      <div class="panel-body">
-        <div class="form-grid">
-          <div class="field"><label>问卷标题</label><input id="fTitle" placeholder="社区团购满意度调查"></div>
-          <div class="field"><label>说明</label><input id="fDesc" placeholder="感谢参与"></div>
-        </div>
-        <div style="margin-top:14px"><button class="btn" data-act="add-form">📝 创建问卷</button>
-        <button class="btn ghost" data-act="view-form-stats" style="margin-left:8px">查看第一个问卷统计</button></div>
-      </div>
-    </div>
-    <div class="panel"><div class="panel-head">问卷列表</div><div class="panel-body" style="overflow-x:auto"><table id="formTable"></table></div></div>
-    <div class="panel" id="formStatsPanel" style="display:none"><div class="panel-head">问卷统计</div><div class="panel-body" id="formStats"></div></div>
-  </section>
-
-  <!-- 预约 -->
-  <section class="page" id="page-appointments">
-    <div class="panel"><div class="panel-head">可预约服务</div><div class="panel-body" style="overflow-x:auto"><table id="serviceTable"></table></div></div>
-    <div class="panel"><div class="panel-head">预约记录</div><div class="panel-body" style="overflow-x:auto"><table id="apptTable"></table></div></div>
-  </section>
-
-  <!-- 设置 -->
-  <section class="page" id="page-settings">
-    <div class="panel"><div class="panel-head">系统信息</div><div class="panel-body" id="sysInfo"></div></div>
-    <div class="panel"><div class="panel-head">微信对接说明</div><div class="panel-body" id="wxHelp"></div></div>
-  </section>
-</main>
+  <main class="main">
+    <header class="topbar">
+      <button class="icon-button nav-toggle" id="navToggle" aria-label="打开导航" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <h1 id="pageTitle">今天</h1>
+      <div class="header-actions" id="headerActions"></div>
+    </header>
+    <section class="content" id="content" aria-live="polite"></section>
+  </main>
 </div>
 
-<div class="login-overlay hidden" id="loginOverlay">
-  <div class="login-card">
-    <h2>邻里团管理后台</h2>
-    <input id="loginUser" placeholder="用户名" value="admin">
-    <input id="loginPass" type="password" placeholder="密码">
-    <div class="err" id="loginErr"></div>
-    <button class="btn" style="width:100%" id="loginBtn">登录</button>
-  </div>
+<div class="login-overlay hidden" id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+  <form class="login-card" id="loginForm">
+    <h2 id="loginTitle">登录邻里团</h2>
+    <label class="field-label" for="loginUser">用户名</label>
+    <input id="loginUser" name="username" autocomplete="username" value="admin">
+    <label class="field-label" for="loginPass">密码</label>
+    <input id="loginPass" name="password" type="password" autocomplete="current-password">
+    <p class="form-error" id="loginError" aria-live="polite"></p>
+    <button class="button primary full" type="submit">登录</button>
+  </form>
 </div>
+
+<dialog class="dialog" id="appDialog" aria-labelledby="dialogTitle">
+  <div class="dialog-header">
+    <h2 id="dialogTitle"></h2>
+    <button class="icon-button" type="button" data-action="close-dialog" aria-label="关闭">×</button>
+  </div>
+  <div class="dialog-body" id="dialogBody"></div>
+  <div class="dialog-footer" id="dialogFooter"></div>
+</dialog>
+
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
 <script src="/static/admin.js"></script>
 </body>
 </html>
