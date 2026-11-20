@@ -5,6 +5,7 @@
  * - 统计结果（各选项分布）
  */
 const { randomUUID: uuidv4 } = require('crypto');
+const { business } = require('../errors');
 
 class FormManager {
   constructor(store) { this.store = store; }

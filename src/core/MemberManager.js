@@ -5,6 +5,7 @@
  * - 消费统计（累计消费/订单数）
  */
 const { randomUUID: uuidv4 } = require('crypto');
+const { business } = require('../errors');
 
 class MemberManager {
   constructor(store, wechatService) {

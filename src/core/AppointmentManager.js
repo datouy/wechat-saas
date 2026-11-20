@@ -5,6 +5,7 @@
  * - 会员预约/取消，防重复占位
  */
 const { randomUUID: uuidv4 } = require('crypto');
+const { business } = require('../errors');
 const { cnDate } = require('./time');
 
 class AppointmentManager {
