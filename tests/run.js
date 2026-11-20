@@ -131,14 +131,52 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || '断言失败'); 
     assert(thrown, '应抛出库存不足');
   });
 
-  console.log('[5] 团购');
+  console.log('[4.5] 部分退款与物流');
+  let po;
+  await testAsync('部分退款(金额)', async () => {
+    const p3 = pm.create(tenant, { name: '部分退款商品', price: 10, stock: 10 });
+    po = om.create(tenant, member.id, [{ productId: p3.id, quantity: 1 }]);
+    await om.pay(po.id, member.id);
+    const r = await om.refund(po.id, '部分退款', 400);
+    assert(r.success && r.mock);
+    assert(om.get(po.id).refundedAmount === 400, '累计退款应为400');
+    assert(om.get(po.id).status === 'paid', '部分退款不应结单');
+  });
+  await testAsync('超额退款被拒绝', async () => {
+    let thrown = false;
+    try { await om.refund(po.id, '超额', 99999); } catch (e) { thrown = true; }
+    assert(thrown, '超过可退金额应被拒绝');
+  });
+  await testAsync('剩余全额退款后结单', async () => {
+    await om.refund(po.id, '尾款');
+    const o = om.get(po.id);
+    assert(o.refundedAmount === o.payAmount, '累计退款应等于实付');
+    assert(o.status === 'refunded', '全额退款后应结单');
+  });
+  await testAsync('发货记录物流', async () => {
+    const p4 = pm.create(tenant, { name: '物流商品', price: 10, stock: 10 });
+    const o4 = om.create(tenant, member.id, [{ productId: p4.id, quantity: 1 }]);
+    await om.pay(o4.id, member.id);
+    om.deliver(o4.id, { company: '顺丰', trackingNo: 'SF1234567890' });
+    const o = om.get(o4.id);
+    assert(o.status === 'delivering', '应已发货');
+    assert(o.logistics && o.logistics.company === '顺丰' && o.logistics.trackingNo === 'SF1234567890', '应记录物流');
+  });
+
+    console.log('[5] 团购');
   const gb = gbm.create(tenant, { productId: prod.id, groupPrice: 15, minParticipants: 2 });
   test('创建团购活动', () => assert(gb.status === 'active' && gb.groupPrice === 1500));
   test('团长参团', () => {
     const g = gbm.join(gb.id, member.id);
     assert(g.participantCount === 1 && g.remaining === 1);
   });
-  await testAsync('第二人参团成团', async () => {
+  test('未成团不可下单', () => {
+    let thrown = false;
+    try { om.create(tenant, member.id, [{ productId: prod.id, quantity: 1 }], { groupBuyId: gb.id }); }
+    catch (e) { thrown = true; }
+    assert(thrown, '未成团时不应允许以团购价下单');
+  });
+    await testAsync('第二人参团成团', async () => {
     const m2 = await mm.loginByWechatCode('test-code-456', tenant);
     const g = gbm.join(gb.id, m2.id);
     assert(g.status === 'success');

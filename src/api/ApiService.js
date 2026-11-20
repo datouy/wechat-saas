@@ -210,7 +210,8 @@ class ApiService {
     app.post('/api/wx/orders/:id/refund', authMember, wrap(async (req, res) => {
       const o = om.get(req.params.id);
       if (!o || o.memberId !== req.memberId) throw business('订单不存在');
-      ok(res, await om.refund(req.params.id, req.body.reason));
+      const amount = req.body.amount !== undefined ? Math.round(Number(req.body.amount) * 100) : undefined;
+      ok(res, await om.refund(req.params.id, req.body.reason, amount));
     }));
 
     app.get('/api/wx/orders', authMember, wrap(async (req, res) => {
@@ -382,14 +383,16 @@ class ApiService {
     app.post('/api/admin/orders/:id/deliver', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);
       if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
-      ok(res, om.deliver(req.params.id));
+      const logistics = { company: req.body.company, trackingNo: req.body.trackingNo };
+      ok(res, om.deliver(req.params.id, logistics));
       audit(req, 'order.deliver', 'order', req.params.id, { orderNo: o.orderNo });
     }));
     app.post('/api/admin/orders/:id/refund', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);
       if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
-      ok(res, await om.refund(req.params.id, req.body.reason));
-      audit(req, 'order.refund', 'order', req.params.id, { orderNo: o.orderNo, reason: req.body.reason });
+      const amount = req.body.amount !== undefined ? Math.round(Number(req.body.amount) * 100) : undefined;
+      ok(res, await om.refund(req.params.id, req.body.reason, amount));
+      audit(req, 'order.refund', 'order', req.params.id, { orderNo: o.orderNo, reason: req.body.reason, amount });
     }));
 
     app.get('/api/admin/members', authAdmin, wrap(async (req, res) => {

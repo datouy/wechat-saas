@@ -61,7 +61,8 @@ class OrderManager {
       if (options.groupBuyId) {
         const gb = this.store.findById('groupBuys', options.groupBuyId);
         if (!gb || gb.tenantId !== tenantId || gb.productId !== p.id) throw business('团购活动无效');
-        if (gb.status !== 'active' && gb.status !== 'success') throw business('团购活动不可用');
+        // 团购下单要求已成团，避免未成团即支付、成团失败后无法退款的资金风险
+        if (gb.status !== 'success') throw business('团购尚未成团，暂不可下单');
         if (new Date(gb.endAt).getTime() < Date.now()) throw business('团购活动已截止');
         if (!gb.participants.some(x => x.memberId === memberId)) throw business('您尚未参加该团购');
         unitPrice = gb.groupPrice;
@@ -220,16 +221,27 @@ class OrderManager {
     return this._onPaid(order, { transactionId, paidAt: new Date().toISOString() });
   }
 
-  /** 申请退款（mock 即时退款；真实模式调用微信退款后等待退款回调确认） */
-  async refund(orderId, reason) {
+  /** 申请退款（mock 即时退款；真实模式调用微信退款后等待退款回调确认）
+   *  refundAmount 为退款金额（分）；缺省为剩余可退金额（全额）。支持部分退款，累计退款不超过实付。 */
+  async refund(orderId, reason, refundAmount) {
     const order = this.store.findById('orders', orderId);
     if (!order) throw business('订单不存在');
     if (!['paid', 'delivering', 'completed'].includes(order.status)) throw business('当前订单状态不支持退款');
-    if (order.refund && order.refund.status === 'refunded') throw business('订单已退款');
+
+    const alreadyRefunded = Math.round(Number(order.refundedAmount) || 0);
+    const refundable = order.payAmount - alreadyRefunded;
+    if (refundable <= 0) throw business('订单已全额退款');
+
+    const target = refundAmount === undefined || refundAmount === null
+      ? refundable
+      : Math.round(Number(refundAmount) || 0);
+    if (!(target > 0)) throw business('退款金额必须大于0');
+    if (target > refundable) throw business('退款金额超过可退金额');
 
     const outRefundNo = 'RF' + order.orderNo.slice(2) + Math.floor(Math.random() * 900 + 100);
     const refundInfo = {
       outRefundNo,
+      amount: target,
       reason: String(reason || '用户申请退款').slice(0, 80),
       status: 'refunding',
       createdAt: new Date().toISOString()
@@ -238,14 +250,14 @@ class OrderManager {
     order.refund = refundInfo;
 
     if (this.wechat.config.mock) {
-      this._finalizeRefund(order, outRefundNo);
+      this._finalizeRefund(order, outRefundNo, target);
       return { success: true, mock: true, order };
     }
     await this.wechat.refund({
       outTradeNo: order.orderNo,
       outRefundNo,
       total: order.payAmount,
-      refund: order.payAmount,
+      refund: target,
       reason: order.refund.reason
     });
     return { success: true, mock: false, refundNo: outRefundNo, order };
@@ -256,24 +268,33 @@ class OrderManager {
     const order = this.store.find('orders', o => o.orderNo === resource.out_trade_no)[0];
     if (!order) return false;
     if (resource.refund_status === 'SUCCESS' && order.refund && order.refund.outRefundNo === resource.out_refund_no) {
-      this._finalizeRefund(order, resource.out_refund_no);
+      const amount = (resource.amount && resource.amount.refund) || (order.refund && order.refund.amount) || order.payAmount;
+      this._finalizeRefund(order, resource.out_refund_no, amount);
       return true;
     }
     return false;
   }
 
-  /** 退款完成：回补库存、回退销量、返还积分 */
-  _finalizeRefund(order, refundNo) {
-    if (order.status === 'refunded') return;
-    for (const it of order.items) {
-      this.products.restoreStock(it.productId, it.quantity);
-      this.products.decreaseSales(it.productId, it.quantity);
-    }
-    if (order.pointsUsed > 0) {
-      this.points.change(order.memberId, order.pointsUsed, '退款返还积分', order.orderNo);
-    }
-    const patch = { status: 'refunded', refundedAt: new Date().toISOString() };
+  /** 退款完成：累计退款金额；全额退款时回补库存、回退销量、返还积分并结单 */
+  _finalizeRefund(order, refundNo, refundAmount) {
+    const amount = Math.round(Number(refundAmount) || 0);
+    const newRefunded = Math.round(Number(order.refundedAmount) || 0) + amount;
+    const isFull = newRefunded >= order.payAmount;
+
+    const patch = { refundedAmount: newRefunded };
     if (order.refund) patch.refund = { ...order.refund, status: 'refunded' };
+
+    if (isFull) {
+      for (const it of order.items) {
+        this.products.restoreStock(it.productId, it.quantity);
+        this.products.decreaseSales(it.productId, it.quantity);
+      }
+      if (order.pointsUsed > 0) {
+        this.points.change(order.memberId, order.pointsUsed, '退款返还积分', order.orderNo);
+      }
+      patch.status = 'refunded';
+      patch.refundedAt = new Date().toISOString();
+    }
     this.store.update('orders', order.id, patch);
   }
 
@@ -297,12 +318,19 @@ class OrderManager {
     return this.store.update('orders', order.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelReason: reason || '用户取消' });
   }
 
-  /** 商家发货/完成配送 */
-  deliver(orderId) {
+  /** 商家发货/完成配送；可附带物流信息（公司 + 单号） */
+  deliver(orderId, logistics) {
     const order = this.store.findById('orders', orderId);
     if (!order) throw business('订单不存在');
     if (order.status !== 'paid') throw business('仅已支付订单可发货');
-    return this.store.update('orders', order.id, { status: 'delivering', deliveredAt: new Date().toISOString() });
+    const patch = { status: 'delivering', deliveredAt: new Date().toISOString() };
+    if (logistics && (logistics.company || logistics.trackingNo)) {
+      patch.logistics = {
+        company: String(logistics.company || '').slice(0, 50),
+        trackingNo: String(logistics.trackingNo || '').slice(0, 64)
+      };
+    }
+    return this.store.update('orders', order.id, patch);
   }
 
   /** 确认收货 */
