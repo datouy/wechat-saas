@@ -9,6 +9,7 @@
  */
 const https = require('https');
 const crypto = require('crypto');
+const { business } = require('../errors');
 
 class WechatService {
   constructor(config) {
@@ -51,7 +52,7 @@ class WechatService {
    * mock模式：根据code派生稳定openid，便于本地联调
    */
   async code2Session(code) {
-    if (!code) throw new Error('缺少登录code');
+    if (!code) throw business('缺少登录code');
 
     if (this.mock) {
       const hash = crypto.createHash('md5').update(String(code)).digest('hex');
@@ -71,7 +72,7 @@ class WechatService {
     const result = await this._request({
       hostname: 'api.weixin.qq.com', path: url, method: 'GET'
     });
-    if (result.errcode) throw new Error('微信登录失败: ' + result.errcode + ' ' + (result.errmsg || ''));
+    if (result.errcode) throw business('微信登录失败: ' + result.errcode + ' ' + (result.errmsg || ''));
     return result;
   }
 

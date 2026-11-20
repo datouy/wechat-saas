@@ -4,6 +4,8 @@
  * - 发放给会员（每人限领）
  * - 下单预留、支付核销、取消释放（防止同一张券被多个待支付订单重复使用）
  */
+
+const { business } = require('../errors');
 const { randomUUID: uuidv4 } = require('crypto');
 
 class CouponManager {
@@ -25,7 +27,7 @@ class CouponManager {
       enabled: data.enabled !== false,
       createdAt: new Date().toISOString()
     };
-    if (tpl.amount <= 0) throw new Error('优惠金额必须大于0');
+    if (tpl.amount <= 0) throw business('优惠金额必须大于0');
     this.store.insert('couponTemplates', tpl);
     return tpl;
   }
@@ -40,11 +42,11 @@ class CouponManager {
 
   claim(templateId, memberId) {
     const tpl = this.store.findById('couponTemplates', templateId);
-    if (!tpl || !tpl.enabled) throw new Error('优惠券不存在或已停用');
+    if (!tpl || !tpl.enabled) throw business('优惠券不存在或已停用');
 
     const claimed = this.store.count('coupons',
       c => c.templateId === templateId && c.memberId === memberId);
-    if (claimed >= tpl.limitPerMember) throw new Error('已达领取上限');
+    if (claimed >= tpl.limitPerMember) throw business('已达领取上限');
 
     const now = new Date();
     const expireAt = new Date(now.getTime() + tpl.validDays * 86400000);
@@ -83,19 +85,19 @@ class CouponManager {
   validate(couponId, memberId, orderAmount) {
     if (!couponId) return null;
     const c = this.store.findById('coupons', couponId);
-    if (!c) throw new Error('优惠券不存在');
-    if (c.memberId !== memberId) throw new Error('优惠券不属于当前会员');
-    if (c.status !== 'unused') throw new Error('优惠券已使用或已被占用');
-    if (new Date(c.expireAt).getTime() < Date.now()) throw new Error('优惠券已过期');
-    if (orderAmount < c.threshold) throw new Error('订单金额未达到使用门槛');
+    if (!c) throw business('优惠券不存在');
+    if (c.memberId !== memberId) throw business('优惠券不属于当前会员');
+    if (c.status !== 'unused') throw business('优惠券已使用或已被占用');
+    if (new Date(c.expireAt).getTime() < Date.now()) throw business('优惠券已过期');
+    if (orderAmount < c.threshold) throw business('订单金额未达到使用门槛');
     return c;
   }
 
   /** 下单时预留优惠券 */
   reserve(couponId, orderId) {
     const c = this.store.findById('coupons', couponId);
-    if (!c) throw new Error('优惠券不存在');
-    if (c.status !== 'unused') throw new Error('优惠券已使用或已被占用');
+    if (!c) throw business('优惠券不存在');
+    if (c.status !== 'unused') throw business('优惠券已使用或已被占用');
     c.status = 'reserved';
     c.reservedByOrderId = orderId;
     c.reservedAt = new Date().toISOString();

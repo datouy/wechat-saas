@@ -5,6 +5,8 @@
  * - 库存分“可用库存 stock”与“销量 sales”：
  *   下单只扣减可用库存，支付成功才累加销量
  */
+
+const { business } = require('../errors');
 const { randomUUID: uuidv4 } = require('crypto');
 
 class ProductManager {
@@ -33,7 +35,7 @@ class ProductManager {
   // ---------- 商品 ----------
   create(tenantId, data) {
     const price = Math.round(Number(data.price) * 100); // 元 -> 分
-    if (!(price > 0)) throw new Error('商品价格必须大于0');
+    if (!(price > 0)) throw business('商品价格必须大于0');
     const item = {
       id: uuidv4(),
       tenantId,
@@ -49,14 +51,14 @@ class ProductManager {
       onSale: data.onSale !== false,
       createdAt: new Date().toISOString()
     };
-    if (!item.name) throw new Error('商品名称不能为空');
+    if (!item.name) throw business('商品名称不能为空');
     this.store.insert('products', item);
     return item;
   }
 
   update(id, patch) {
     const item = this.store.findById('products', id);
-    if (!item) throw new Error('商品不存在');
+    if (!item) throw business('商品不存在');
     const allow = ['name', 'description', 'image', 'categoryId', 'unit', 'stock', 'onSale', 'sort'];
     const clean = {};
     for (const k of allow) if (patch[k] !== undefined) clean[k] = patch[k];
@@ -88,7 +90,7 @@ class ProductManager {
   /** 下单时扣减可用库存，库存不足返回false（不影响销量） */
   deductStock(productId, qty) {
     const p = this.get(productId);
-    if (!p) throw new Error('商品不存在');
+    if (!p) throw business('商品不存在');
     if (p.stock < qty) return false;
     p.stock -= qty;
     this.store.markDirty('products');

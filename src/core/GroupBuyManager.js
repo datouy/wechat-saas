@@ -4,6 +4,8 @@
  * - 会员开团/参团，成团后仍可在截止前继续参团（不超过上限）
  * - 成团进度统计与自动关闭
  */
+
+const { business } = require('../errors');
 const { randomUUID: uuidv4 } = require('crypto');
 
 class GroupBuyManager {
@@ -20,15 +22,15 @@ class GroupBuyManager {
 
   create(tenantId, data) {
     const product = this.products.get(data.productId);
-    if (!product || product.tenantId !== tenantId) throw new Error('商品不存在');
+    if (!product || product.tenantId !== tenantId) throw business('商品不存在');
     const groupPrice = Math.round(Number(data.groupPrice) * 100);
-    if (!(groupPrice > 0)) throw new Error('团购价必须大于0');
-    if (groupPrice > product.price) throw new Error('团购价不能高于商品原价');
+    if (!(groupPrice > 0)) throw business('团购价必须大于0');
+    if (groupPrice > product.price) throw business('团购价不能高于商品原价');
 
     const now = new Date();
     const endAt = data.endAt ? new Date(data.endAt) :
       new Date(now.getTime() + (Number(data.durationHours) || this.config.autoCloseHours) * 3600000);
-    if (isNaN(endAt.getTime())) throw new Error('活动截止时间无效');
+    if (isNaN(endAt.getTime())) throw business('活动截止时间无效');
 
     const gb = {
       id: uuidv4(),
@@ -71,17 +73,17 @@ class GroupBuyManager {
   /** 参团：active 或 success 状态下、截止前均可加入 */
   join(groupBuyId, memberId) {
     const gb = this.store.findById('groupBuys', groupBuyId);
-    if (!gb) throw new Error('团购活动不存在');
-    if (gb.status === 'cancelled' || gb.status === 'closed') throw new Error('活动已结束');
+    if (!gb) throw business('团购活动不存在');
+    if (gb.status === 'cancelled' || gb.status === 'closed') throw business('活动已结束');
     if (new Date(gb.endAt).getTime() < Date.now()) {
       gb.status = 'closed';
       this.store.markDirty('groupBuys');
-      throw new Error('活动已截止');
+      throw business('活动已截止');
     }
     if (gb.participants.some(p => p.memberId === memberId)) {
       return this._decorate(gb); // 已参团，幂等返回
     }
-    if (gb.participants.length >= gb.maxParticipants) throw new Error('参团人数已满');
+    if (gb.participants.length >= gb.maxParticipants) throw business('参团人数已满');
 
     gb.participants.push({
       memberId,
@@ -99,7 +101,7 @@ class GroupBuyManager {
 
   cancel(id) {
     const gb = this.store.findById('groupBuys', id);
-    if (!gb) throw new Error('团购活动不存在');
+    if (!gb) throw business('团购活动不存在');
     if (gb.status === 'cancelled') return gb;
     gb.status = 'cancelled';
     this.store.markDirty('groupBuys');

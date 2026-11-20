@@ -25,7 +25,7 @@ class FormManager {
       status: data.status === 'closed' ? 'closed' : 'open',
       createdAt: new Date().toISOString()
     };
-    if (!form.title) throw new Error('表单标题不能为空');
+    if (!form.title) throw business('表单标题不能为空');
     this.store.insert('forms', form);
     return form;
   }
@@ -40,10 +40,10 @@ class FormManager {
   /** 提交表单 */
   submit(formId, memberId, answers) {
     const form = this.get(formId);
-    if (!form) throw new Error('表单不存在');
-    if (form.status !== 'open') throw new Error('表单已关闭');
+    if (!form) throw business('表单不存在');
+    if (form.status !== 'open') throw business('表单已关闭');
     if (this.store.find('formSubmissions', s => s.formId === formId && s.memberId === memberId).length > 0) {
-      throw new Error('您已提交过该表单');
+      throw business('您已提交过该表单');
     }
     // 必填校验
     const valueMap = {};
@@ -51,7 +51,7 @@ class FormManager {
       const v = answers ? answers[f.id] : undefined;
       valueMap[f.id] = v;
       if (f.required && (v === undefined || v === '' || (Array.isArray(v) && v.length === 0))) {
-        throw new Error('必填项未填写: ' + f.label);
+        throw business('必填项未填写: ' + f.label);
       }
     }
     const submission = {
@@ -69,7 +69,7 @@ class FormManager {
   /** 表单统计 */
   stats(formId) {
     const form = this.get(formId);
-    if (!form) throw new Error('表单不存在');
+    if (!form) throw business('表单不存在');
     const subs = this.store.find('formSubmissions', s => s.formId === formId);
     const result = { formId, title: form.title, total: subs.length, fields: [] };
     for (const f of form.fields) {

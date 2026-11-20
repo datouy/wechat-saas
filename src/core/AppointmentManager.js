@@ -24,7 +24,7 @@ class AppointmentManager {
       enabled: data.enabled !== false,
       createdAt: new Date().toISOString()
     };
-    if (!svc.name) throw new Error('服务名称不能为空');
+    if (!svc.name) throw business('服务名称不能为空');
     this.store.insert('appointmentServices', svc);
     return svc;
   }
@@ -36,7 +36,7 @@ class AppointmentManager {
   /** 查询某日某服务的可用时段（含余位） */
   querySlots(serviceId, date) {
     const svc = this.store.findById('appointmentServices', serviceId);
-    if (!svc) throw new Error('服务不存在');
+    if (!svc) throw business('服务不存在');
     const booked = this.store.find('appointments',
       a => a.serviceId === serviceId && a.date === date && a.status === 'booked');
     return svc.slots.map(slot => {
@@ -48,18 +48,18 @@ class AppointmentManager {
   /** 预约 */
   book(serviceId, memberId, date, slot, note) {
     const svc = this.store.findById('appointmentServices', serviceId);
-    if (!svc || !svc.enabled) throw new Error('服务不可预约');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw new Error('日期格式需为 YYYY-MM-DD');
-    if (!svc.slots.includes(slot)) throw new Error('时段无效');
-    if (date < cnDate()) throw new Error('不能预约过去的日期');
+    if (!svc || !svc.enabled) throw business('服务不可预约');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw business('日期格式需为 YYYY-MM-DD');
+    if (!svc.slots.includes(slot)) throw business('时段无效');
+    if (date < cnDate()) throw business('不能预约过去的日期');
 
     const dup = this.store.find('appointments',
       a => a.serviceId === serviceId && a.memberId === memberId && a.date === date && a.slot === slot && a.status === 'booked');
-    if (dup.length) throw new Error('您已预约该时段');
+    if (dup.length) throw business('您已预约该时段');
 
     const slots = this.querySlots(serviceId, date);
     const target = slots.find(s => s.slot === slot);
-    if (!target || target.available <= 0) throw new Error('该时段已约满');
+    if (!target || target.available <= 0) throw business('该时段已约满');
 
     const appt = {
       id: uuidv4(),
@@ -79,9 +79,9 @@ class AppointmentManager {
 
   cancel(appointmentId, memberId) {
     const a = this.store.findById('appointments', appointmentId);
-    if (!a) throw new Error('预约不存在');
-    if (memberId && a.memberId !== memberId) throw new Error('无权操作');
-    if (a.status !== 'booked') throw new Error('预约已不可取消');
+    if (!a) throw business('预约不存在');
+    if (memberId && a.memberId !== memberId) throw business('无权操作');
+    if (a.status !== 'booked') throw business('预约已不可取消');
     a.status = 'cancelled';
     a.cancelledAt = new Date().toISOString();
     this.store.markDirty('appointments');

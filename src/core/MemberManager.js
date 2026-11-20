@@ -16,7 +16,7 @@ class MemberManager {
   async loginByWechatCode(code, tenantId) {
     const session = await this.wechat.code2Session(code);
     const openid = session.openid;
-    if (!openid) throw new Error('微信登录失败：未获得openid');
+    if (!openid) throw business('微信登录失败：未获得openid');
 
     let member = this.store.find('members', m => m.openid === openid && m.tenantId === tenantId)[0];
     if (!member) {
@@ -58,7 +58,7 @@ class MemberManager {
   /** 新增收货地址 */
   addAddress(memberId, address) {
     const member = this.get(memberId);
-    if (!member) throw new Error('会员不存在');
+    if (!member) throw business('会员不存在');
     const addr = {
       id: uuidv4(),
       name: String(address.name || '').slice(0, 20),

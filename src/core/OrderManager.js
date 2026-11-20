@@ -6,6 +6,8 @@
  *   paid/delivering/completed -> refunding -> refunded 已退款（回补库存、回退销量、返还积分）
  * 支付成功后：核销优惠券、累计消费、发放积分、累加商品销量
  */
+
+const { business } = require('../errors');
 const { randomUUID: uuidv4 } = require('crypto');
 
 class OrderManager {
@@ -40,28 +42,28 @@ class OrderManager {
    * options: { usePoints, couponId, addressId, remark, groupBuyId, deliveryType }
    */
   create(tenantId, memberId, items, options = {}) {
-    if (!Array.isArray(items) || items.length === 0) throw new Error('订单商品不能为空');
+    if (!Array.isArray(items) || items.length === 0) throw business('订单商品不能为空');
     const member = this.members.get(memberId);
-    if (!member || member.tenantId !== tenantId) throw new Error('会员不存在');
+    if (!member || member.tenantId !== tenantId) throw business('会员不存在');
 
     // 1. 校验商品、库存与团购价资格
     const orderItems = [];
     let goodsAmount = 0;
     for (const it of items) {
       const p = this.products.get(it.productId);
-      if (!p || p.tenantId !== tenantId) throw new Error('商品不存在: ' + it.productId);
-      if (!p.onSale) throw new Error('商品已下架: ' + p.name);
+      if (!p || p.tenantId !== tenantId) throw business('商品不存在: ' + it.productId);
+      if (!p.onSale) throw business('商品已下架: ' + p.name);
       const qty = Math.floor(Number(it.quantity) || 0);
-      if (qty <= 0) throw new Error('商品数量不合法: ' + p.name);
-      if (p.stock < qty) throw new Error('库存不足: ' + p.name);
+      if (qty <= 0) throw business('商品数量不合法: ' + p.name);
+      if (p.stock < qty) throw business('库存不足: ' + p.name);
 
       let unitPrice = p.price;
       if (options.groupBuyId) {
         const gb = this.store.findById('groupBuys', options.groupBuyId);
-        if (!gb || gb.tenantId !== tenantId || gb.productId !== p.id) throw new Error('团购活动无效');
-        if (gb.status !== 'active' && gb.status !== 'success') throw new Error('团购活动不可用');
-        if (new Date(gb.endAt).getTime() < Date.now()) throw new Error('团购活动已截止');
-        if (!gb.participants.some(x => x.memberId === memberId)) throw new Error('您尚未参加该团购');
+        if (!gb || gb.tenantId !== tenantId || gb.productId !== p.id) throw business('团购活动无效');
+        if (gb.status !== 'active' && gb.status !== 'success') throw business('团购活动不可用');
+        if (new Date(gb.endAt).getTime() < Date.now()) throw business('团购活动已截止');
+        if (!gb.participants.some(x => x.memberId === memberId)) throw business('您尚未参加该团购');
         unitPrice = gb.groupPrice;
       }
 
@@ -106,7 +108,7 @@ class OrderManager {
     try {
       for (const it of orderItems) {
         if (!this.products.deductStock(it.productId, it.quantity)) {
-          throw new Error('库存不足: ' + it.name);
+          throw business('库存不足: ' + it.name);
         }
       }
       if (pointsUsed > 0) {
@@ -154,13 +156,13 @@ class OrderManager {
   /** 支付订单：mock模式直接标记已支付；真实模式返回 wx.requestPayment 参数（openid 从会员记录推导） */
   async pay(orderId, memberId) {
     const order = this.store.findById('orders', orderId);
-    if (!order) throw new Error('订单不存在');
-    if (order.memberId !== memberId) throw new Error('无权操作此订单');
+    if (!order) throw business('订单不存在');
+    if (order.memberId !== memberId) throw business('无权操作此订单');
     if (order.status === 'paid') {
       return { success: true, alreadyPaid: true, mock: this.wechat.config.mock, order };
     }
-    if (order.status !== 'pending') throw new Error('订单状态不允许支付');
-    if (new Date(order.expiresAt).getTime() < Date.now()) throw new Error('订单已超时，请重新下单');
+    if (order.status !== 'pending') throw business('订单状态不允许支付');
+    if (new Date(order.expiresAt).getTime() < Date.now()) throw business('订单已超时，请重新下单');
 
     if (this.wechat.config.mock) {
       const payResult = {
@@ -216,7 +218,7 @@ class OrderManager {
     if (order.status === 'paid' || order.status === 'delivering' || order.status === 'completed') return true;
     if (order.status !== 'pending') return false;
     if (totalAmount !== undefined && Math.round(Number(totalAmount)) !== order.payAmount) {
-      throw new Error('支付金额与订单不符');
+      throw business('支付金额与订单不符');
     }
     return this._onPaid(order, { transactionId, paidAt: new Date().toISOString() });
   }
@@ -224,9 +226,9 @@ class OrderManager {
   /** 申请退款（mock 即时退款；真实模式调用微信退款后等待退款回调确认） */
   async refund(orderId, reason) {
     const order = this.store.findById('orders', orderId);
-    if (!order) throw new Error('订单不存在');
-    if (!['paid', 'delivering', 'completed'].includes(order.status)) throw new Error('当前订单状态不支持退款');
-    if (order.refund && order.refund.status === 'refunded') throw new Error('订单已退款');
+    if (!order) throw business('订单不存在');
+    if (!['paid', 'delivering', 'completed'].includes(order.status)) throw business('当前订单状态不支持退款');
+    if (order.refund && order.refund.status === 'refunded') throw business('订单已退款');
 
     const outRefundNo = 'RF' + order.orderNo.slice(2) + Math.floor(Math.random() * 900 + 100);
     order.refund = {
@@ -281,9 +283,9 @@ class OrderManager {
   /** 取消订单（仅待支付；已支付请走退款流程） */
   cancel(orderId, memberId, reason) {
     const order = this.store.findById('orders', orderId);
-    if (!order) throw new Error('订单不存在');
-    if (memberId && order.memberId !== memberId) throw new Error('无权操作此订单');
-    if (order.status !== 'pending') throw new Error('仅待支付订单可取消，已支付订单请走退款流程');
+    if (!order) throw business('订单不存在');
+    if (memberId && order.memberId !== memberId) throw business('无权操作此订单');
+    if (order.status !== 'pending') throw business('仅待支付订单可取消，已支付订单请走退款流程');
 
     for (const it of order.items) {
       this.products.restoreStock(it.productId, it.quantity);
@@ -305,8 +307,8 @@ class OrderManager {
   /** 商家发货/完成配送 */
   deliver(orderId) {
     const order = this.store.findById('orders', orderId);
-    if (!order) throw new Error('订单不存在');
-    if (order.status !== 'paid') throw new Error('仅已支付订单可发货');
+    if (!order) throw business('订单不存在');
+    if (order.status !== 'paid') throw business('仅已支付订单可发货');
     order.status = 'delivering';
     order.deliveredAt = new Date().toISOString();
     this.store.markDirty('orders');
@@ -316,9 +318,9 @@ class OrderManager {
   /** 确认收货 */
   complete(orderId, memberId) {
     const order = this.store.findById('orders', orderId);
-    if (!order) throw new Error('订单不存在');
-    if (memberId && order.memberId !== memberId) throw new Error('无权操作此订单');
-    if (order.status !== 'delivering') throw new Error('仅配送中订单可确认收货');
+    if (!order) throw business('订单不存在');
+    if (memberId && order.memberId !== memberId) throw business('无权操作此订单');
+    if (order.status !== 'delivering') throw business('仅配送中订单可确认收货');
     order.status = 'completed';
     order.completedAt = new Date().toISOString();
     this.store.markDirty('orders');

@@ -5,7 +5,7 @@
  *  - /api/wx/*      小程序端（微信用户使用，需会员令牌；公开目录除外）
  * 会员与管理员身份一律从签名令牌推导，不再信任客户端自报的 memberId / X-Tenant-Id
  */
-const { toAppError } = require('../errors');
+const { toAppError, business } = require('../errors');
 const { validate } = require('../validation');
 class ApiService {
   constructor(app, deps) {
@@ -129,7 +129,7 @@ class ApiService {
 
     app.get('/api/wx/products/:id', wrap(async (req, res) => {
       const p = pm.get(req.params.id);
-      if (!p) throw new Error('商品不存在');
+      if (!p) throw business('商品不存在');
       ok(res, this._priceView(p));
     }));
 
@@ -173,7 +173,7 @@ class ApiService {
     app.post('/api/wx/coupons/claim', authMember, wrap(async (req, res) => {
       if (!memberOf(req)) return unauthorized(req, res);
       const tpl = cm.getTemplate(req.body.templateId);
-      if (!tpl || tpl.tenantId !== req.tenantId) throw new Error('优惠券不存在');
+      if (!tpl || tpl.tenantId !== req.tenantId) throw business('优惠券不存在');
       ok(res, cm.claim(req.body.templateId, req.memberId));
     }));
     app.get('/api/wx/member/:id/coupons', authMember, wrap(async (req, res) => {
@@ -203,7 +203,7 @@ class ApiService {
 
     app.post('/api/wx/orders/:id/refund', authMember, wrap(async (req, res) => {
       const o = om.get(req.params.id);
-      if (!o || o.memberId !== req.memberId) throw new Error('订单不存在');
+      if (!o || o.memberId !== req.memberId) throw business('订单不存在');
       ok(res, await om.refund(req.params.id, req.body.reason));
     }));
 
@@ -213,7 +213,7 @@ class ApiService {
 
     app.get('/api/wx/orders/:id', authMember, wrap(async (req, res) => {
       const o = om.get(req.params.id);
-      if (!o || o.memberId !== req.memberId) throw new Error('订单不存在');
+      if (!o || o.memberId !== req.memberId) throw business('订单不存在');
       ok(res, o);
     }));
 
@@ -223,13 +223,13 @@ class ApiService {
     }));
     app.get('/api/wx/groupbuys/:id', wrap(async (req, res) => {
       const gb = gbm.get(req.params.id);
-      if (!gb) throw new Error('团购不存在');
+      if (!gb) throw business('团购不存在');
       ok(res, gb);
     }));
     app.post('/api/wx/groupbuys/:id/join', authMember, wrap(async (req, res) => {
       if (!memberOf(req)) return unauthorized(req, res);
       const gb = gbm.get(req.params.id);
-      if (!gb || gb.tenantId !== req.tenantId) throw new Error('团购不存在');
+      if (!gb || gb.tenantId !== req.tenantId) throw business('团购不存在');
       ok(res, gbm.join(req.params.id, req.memberId));
     }));
 
@@ -239,13 +239,13 @@ class ApiService {
     }));
     app.get('/api/wx/forms/:id', wrap(async (req, res) => {
       const f = fm.get(req.params.id);
-      if (!f) throw new Error('表单不存在');
+      if (!f) throw business('表单不存在');
       ok(res, f);
     }));
     app.post('/api/wx/forms/:id/submit', authMember, wrap(async (req, res) => {
       if (!memberOf(req)) return unauthorized(req, res);
       const f = fm.get(req.params.id);
-      if (!f || f.tenantId !== req.tenantId) throw new Error('表单不存在');
+      if (!f || f.tenantId !== req.tenantId) throw business('表单不存在');
       ok(res, fm.submit(req.params.id, req.memberId, validate('formSubmit', req.body).answers));
     }));
 
@@ -259,7 +259,7 @@ class ApiService {
     app.post('/api/wx/appointments', authMember, wrap(async (req, res) => {
       if (!memberOf(req)) return unauthorized(req, res);
       const svc = store.findById('appointmentServices', req.body.serviceId);
-      if (!svc || svc.tenantId !== req.tenantId) throw new Error('服务不存在');
+      if (!svc || svc.tenantId !== req.tenantId) throw business('服务不存在');
       const body = validate('appointmentBook', req.body);
       ok(res, am.book(body.serviceId, req.memberId, body.date, body.slot, body.note));
     }));
@@ -281,8 +281,8 @@ class ApiService {
         } else {
           const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body);
           const payload = wechat.verifyPayNotify(req.headers, rawBody);
-          if (payload.mchid && payload.mchid !== wechat.mchId) throw new Error('商户号不符');
-          if (payload.appid && payload.appid !== wechat.appId) throw new Error('AppID 不符');
+          if (payload.mchid && payload.mchid !== wechat.mchId) throw business('商户号不符');
+          if (payload.appid && payload.appid !== wechat.appId) throw business('AppID 不符');
           if (payload.trade_state && payload.trade_state !== 'SUCCESS') {
             return res.json({ code: 'SUCCESS', message: '成功' }); // 非成功状态直接确认，避免重复回调
           }
@@ -353,14 +353,14 @@ class ApiService {
     }));
     app.put('/api/admin/products/:id', authAdmin, wrap(async (req, res) => {
       const p = pm.get(req.params.id);
-      if (!p || p.tenantId !== req.tenantId) throw new Error('商品不存在');
+      if (!p || p.tenantId !== req.tenantId) throw business('商品不存在');
       const updated = pm.update(req.params.id, validate('productUpdate', req.body));
       audit(req, 'product.update', 'product', req.params.id, { patch: req.body });
       ok(res, this._priceView(updated));
     }));
     app.delete('/api/admin/products/:id', authAdmin, wrap(async (req, res) => {
       const p = pm.get(req.params.id);
-      if (!p || p.tenantId !== req.tenantId) throw new Error('商品不存在');
+      if (!p || p.tenantId !== req.tenantId) throw business('商品不存在');
       ok(res, { removed: pm.remove(req.params.id) });
       audit(req, 'product.delete', 'product', req.params.id, { name: p.name });
     }));
@@ -370,13 +370,13 @@ class ApiService {
     }));
     app.post('/api/admin/orders/:id/deliver', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);
-      if (!o || o.tenantId !== req.tenantId) throw new Error('订单不存在');
+      if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
       ok(res, om.deliver(req.params.id));
       audit(req, 'order.deliver', 'order', req.params.id, { orderNo: o.orderNo });
     }));
     app.post('/api/admin/orders/:id/refund', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);
-      if (!o || o.tenantId !== req.tenantId) throw new Error('订单不存在');
+      if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
       ok(res, await om.refund(req.params.id, req.body.reason));
       audit(req, 'order.refund', 'order', req.params.id, { orderNo: o.orderNo, reason: req.body.reason });
     }));
@@ -408,7 +408,7 @@ class ApiService {
     }));
     app.post('/api/admin/groupbuys/:id/cancel', authAdmin, wrap(async (req, res) => {
       const gb = gbm.get(req.params.id);
-      if (!gb || gb.tenantId !== req.tenantId) throw new Error('团购不存在');
+      if (!gb || gb.tenantId !== req.tenantId) throw business('团购不存在');
       ok(res, gbm.cancel(req.params.id));
       audit(req, 'groupbuy.cancel', 'groupbuy', req.params.id, { title: gb.title });
     }));
@@ -421,7 +421,7 @@ class ApiService {
     }));
     app.get('/api/admin/forms/:id/stats', authAdmin, wrap(async (req, res) => {
       const f = fm.get(req.params.id);
-      if (!f || f.tenantId !== req.tenantId) throw new Error('表单不存在');
+      if (!f || f.tenantId !== req.tenantId) throw business('表单不存在');
       ok(res, fm.stats(req.params.id));
     }));
 
