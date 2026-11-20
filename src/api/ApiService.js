@@ -17,7 +17,7 @@ class ApiService {
     const { app } = this;
     const { store, config, tenantManager, auth, adminService, productManager: pm, orderManager: om,
             memberManager: mm, pointsManager: pts, couponManager: cm, groupBuyManager: gbm,
-            formManager: fm, appointmentManager: am, statsService: stats, auditLog, wechat } = this.deps;
+            formManager: fm, appointmentManager: am, statsService: stats, auditLog, reconciliation, wechat } = this.deps;
 
     // ---------- 通用工具 ----------
     const ok = (res, data) => res.json({ success: true, data });
@@ -451,6 +451,11 @@ class ApiService {
 
     app.get('/api/admin/audit-logs', authAdmin, wrap(async (req, res) => {
       ok(res, paginate(req, auditLog.listByTenant(req.tenantId, { action: req.query.action, actorType: req.query.actorType })));
+    }));
+
+    // 对账：下载微信交易对账单并与本地订单比对（admin）
+    app.get('/api/admin/reconciliation', authAdmin, wrap(async (req, res) => {
+      ok(res, await reconciliation.reconcile(req.query.date));
     }));
 
     app.get('/api/admin/system', authAdmin, wrap(async (req, res) => {

@@ -13,7 +13,8 @@
     "test:tenant": "node tests/http-tenant.js",
     "test:sqlite": "node tests/run-sqlite.js",
     "test:concurrency": "node tests/concurrency-oversell.js",
-    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation && npm run test:tenant && npm run test:sqlite && npm run test:concurrency"
+    "test:reconciliation": "node tests/reconciliation.js",
+    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation && npm run test:tenant && npm run test:sqlite && npm run test:concurrency && npm run test:reconciliation"
   },
   "keywords": [
     "wechat",

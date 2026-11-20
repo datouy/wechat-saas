@@ -20,6 +20,7 @@ const CouponManager = require('./core/CouponManager');
 const ProductManager = require('./core/ProductManager');
 const GroupBuyManager = require('./core/GroupBuyManager');
 const OrderManager = require('./core/OrderManager');
+const ReconciliationService = require('./core/ReconciliationService');
 const FormManager = require('./core/FormManager');
 const AppointmentManager = require('./core/AppointmentManager');
 const StatsService = require('./core/StatsService');
@@ -107,6 +108,7 @@ class WechatSaas {
       wechatService: this.wechat,
       config: config.orders
     });
+    this.reconciliation = new ReconciliationService(this.store, this.orderManager, this.wechat);
     this.formManager = new FormManager(this.store);
     this.appointmentManager = new AppointmentManager(this.store);
     this.statsService = new StatsService(this.store);
@@ -146,6 +148,7 @@ class WechatSaas {
       appointmentManager: this.appointmentManager,
       statsService: this.statsService,
       auditLog: this.auditLog,
+      reconciliation: this.reconciliation,
       wechat: this.wechat
     });
     this.apiService.registerRoutes();

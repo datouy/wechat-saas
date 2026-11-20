@@ -150,6 +150,45 @@ class WechatService {
     return result;
   }
 
+
+  /** 微信支付 v3 原始响应请求（对账单等返回非 JSON 文本的接口） */
+  async _requestV3Raw(method, urlPath, bodyObj) {
+    const body = bodyObj ? JSON.stringify(bodyObj) : '';
+    const headers = this._authHeader(method, urlPath, body);
+    const result = await new Promise((resolve, reject) => {
+      const req = https.request({
+        hostname: 'api.mch.weixin.qq.com',
+        path: urlPath,
+        method,
+        headers
+      }, res => {
+        let data = '';
+        res.on('data', c => (data += c));
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) resolve(data);
+          else reject(new Error('微信支付请求失败: HTTP ' + res.statusCode));
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('微信支付接口请求超时')); });
+      if (body) req.write(body);
+      req.end();
+    });
+    return result;
+  }
+
+  /** 下载账单 CSV 文件（download_url 为无需商户签名的明文地址，返回原始文本） */
+  _requestPlain(url) {
+    return new Promise((resolve, reject) => {
+      const req = https.get(url, res => {
+        let data = '';
+        res.on('data', c => (data += c));
+        res.on('end', () => resolve(data));
+      });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('账单下载超时')); });
+    });
+  }
   /**
    * JSAPI下单（微信支付 v3）
    * 真实模式：调用 /v3/pay/transactions/jsapi 获取 prepay_id，再构造小程序调起支付参数
@@ -281,6 +320,33 @@ class WechatService {
     return typeof c === 'string' ? c : c.pem;
   }
 
+  /**
+   * 下载交易对账单（微信支付 v3）
+   * @param date YYYY-MM-DD
+   * mock 模式返回确定性示例 CSV；真实模式先请求 /v3/bill/tradebill 获取 download_url，再下载 CSV 原文。
+   * 说明：真实对账需完成商户证书/密钥联调，本方法已实现完整调用链路但尚未接入真实环境验证。
+   */
+  async downloadTradeBill(date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date))) throw business('对账日期格式应为 YYYY-MM-DD');
+    if (this.mock) return this._mockTradeBill(date);
+    if (!this.mchId || !this.serialNo || !this.privateKey || !this.apiV3Key) throw business('微信支付配置不完整，无法下载对账单');
+    const url = '/v3/bill/tradebill?bill_date=' + encodeURIComponent(String(date));
+    const meta = await this._requestV3('GET', url, null);
+    if (meta && meta.download_url) return this._requestPlain(meta.download_url);
+    if (meta && typeof meta.raw === 'string') return meta.raw;
+    throw business('对账单下载失败：未返回下载地址或账单内容');
+  }
+
+  /** mock 对账单（与真实表头一致，供对账流程本地联调） */
+  _mockTradeBill(date) {
+    const header = '交易时间,公众账号ID,商户号,特约商户号,设备号,微信订单号,商户订单号,用户标识,交易类型,交易状态,付款银行,货币种类,应结订单金额,代金券金额,微信退款单号,商户退款单号,退款金额,充值券退款金额,退款类型,退款状态,商品名称,商户数据包,手续费,费率,订单金额,申请退款金额,费率备注';
+    const row = [
+      date + ' 12:00:00', 'wx-test-appid', '1900000001', '', '', '420000000000000001',
+      'NT20260101000001', 'mock_openid', 'JSAPI', 'SUCCESS', 'BANK', 'CNY', '1.00', '0.00',
+      '', '', '0.00', '0.00', '', '', '邻里团订单', '', '0.00', '0.60%', '1.00', '0.00', ''
+    ];
+    return header + '\n' + row.join(',');
+  }
   /** 退款（微信支付 v3） */
   async refund({ outTradeNo, outRefundNo, total, refund, reason }) {
     if (this.mock) {
