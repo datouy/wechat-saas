@@ -187,16 +187,13 @@ class OrderManager {
   /** 支付成功回调（mock 或微信支付异步通知），幂等 */
   _onPaid(order, payInfo) {
     if (order.status !== 'pending') return false;
-    order.status = 'paid';
-    order.paidAt = new Date().toISOString();
-    order.payInfo = payInfo;
+    this.store.update('orders', order.id, { status: 'paid', paidAt: new Date().toISOString(), payInfo });
 
     if (order.couponId) this.coupons.use(order.couponId);
     this.members.recordSpending(order.memberId, order.payAmount / 100);
     this.points.earnByOrder(order.memberId, order.orderNo, order.payAmount / 100);
     for (const it of order.items) this.products.increaseSales(it.productId, it.quantity);
 
-    this.store.markDirty('orders');
     return true;
   }
 
@@ -231,13 +228,14 @@ class OrderManager {
     if (order.refund && order.refund.status === 'refunded') throw business('订单已退款');
 
     const outRefundNo = 'RF' + order.orderNo.slice(2) + Math.floor(Math.random() * 900 + 100);
-    order.refund = {
+    const refundInfo = {
       outRefundNo,
       reason: String(reason || '用户申请退款').slice(0, 80),
       status: 'refunding',
       createdAt: new Date().toISOString()
     };
-    this.store.markDirty('orders');
+    this.store.update('orders', order.id, { refund: refundInfo });
+    order.refund = refundInfo;
 
     if (this.wechat.config.mock) {
       this._finalizeRefund(order, outRefundNo);
@@ -274,10 +272,9 @@ class OrderManager {
     if (order.pointsUsed > 0) {
       this.points.change(order.memberId, order.pointsUsed, '退款返还积分', order.orderNo);
     }
-    order.status = 'refunded';
-    order.refundedAt = new Date().toISOString();
-    if (order.refund) order.refund.status = 'refunded';
-    this.store.markDirty('orders');
+    const patch = { status: 'refunded', refundedAt: new Date().toISOString() };
+    if (order.refund) patch.refund = { ...order.refund, status: 'refunded' };
+    this.store.update('orders', order.id, patch);
   }
 
   /** 取消订单（仅待支付；已支付请走退款流程） */
@@ -297,11 +294,7 @@ class OrderManager {
       this.coupons.release(order.couponId, order.id);
     }
 
-    order.status = 'cancelled';
-    order.cancelledAt = new Date().toISOString();
-    order.cancelReason = reason || '用户取消';
-    this.store.markDirty('orders');
-    return order;
+    return this.store.update('orders', order.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelReason: reason || '用户取消' });
   }
 
   /** 商家发货/完成配送 */
@@ -309,10 +302,7 @@ class OrderManager {
     const order = this.store.findById('orders', orderId);
     if (!order) throw business('订单不存在');
     if (order.status !== 'paid') throw business('仅已支付订单可发货');
-    order.status = 'delivering';
-    order.deliveredAt = new Date().toISOString();
-    this.store.markDirty('orders');
-    return order;
+    return this.store.update('orders', order.id, { status: 'delivering', deliveredAt: new Date().toISOString() });
   }
 
   /** 确认收货 */
@@ -321,10 +311,7 @@ class OrderManager {
     if (!order) throw business('订单不存在');
     if (memberId && order.memberId !== memberId) throw business('无权操作此订单');
     if (order.status !== 'delivering') throw business('仅配送中订单可确认收货');
-    order.status = 'completed';
-    order.completedAt = new Date().toISOString();
-    this.store.markDirty('orders');
-    return order;
+    return this.store.update('orders', order.id, { status: 'completed', completedAt: new Date().toISOString() });
   }
 
   get(orderId) {
@@ -350,24 +337,17 @@ class OrderManager {
   /** 定时清理：超时未支付自动取消；配送中超时自动完成 */
   _housekeeping() {
     const now = Date.now();
-    let changed = false;
-    for (const order of this.store.collection('orders')) {
+    for (const order of this.store.find('orders', () => true)) {
       if (order.status === 'pending' && new Date(order.expiresAt).getTime() < now) {
-        try {
-          this.cancel(order.id, null, '超时未支付自动取消');
-          changed = true;
-        } catch (e) {}
+        try { this.cancel(order.id, null, '超时未支付自动取消'); } catch (e) {}
       }
       if (order.status === 'delivering' && order.deliveredAt) {
         const autoDays = this.config.autoCompleteDays || 3;
         if (now - new Date(order.deliveredAt).getTime() > autoDays * 86400000) {
-          order.status = 'completed';
-          order.completedAt = new Date().toISOString();
-          changed = true;
+          this.store.update('orders', order.id, { status: 'completed', completedAt: new Date().toISOString() });
         }
       }
     }
-    if (changed) this.store.markDirty('orders');
   }
 
   shutdown() {

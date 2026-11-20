@@ -83,10 +83,7 @@ class AppointmentManager {
     if (!a) throw business('预约不存在');
     if (memberId && a.memberId !== memberId) throw business('无权操作');
     if (a.status !== 'booked') throw business('预约已不可取消');
-    a.status = 'cancelled';
-    a.cancelledAt = new Date().toISOString();
-    this.store.markDirty('appointments');
-    return a;
+    return this.store.update('appointments', appointmentId, { status: 'cancelled', cancelledAt: new Date().toISOString() });
   }
 
   listByTenant(tenantId, opts = {}) {

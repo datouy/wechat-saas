@@ -76,8 +76,7 @@ class GroupBuyManager {
     if (!gb) throw business('团购活动不存在');
     if (gb.status === 'cancelled' || gb.status === 'closed') throw business('活动已结束');
     if (new Date(gb.endAt).getTime() < Date.now()) {
-      gb.status = 'closed';
-      this.store.markDirty('groupBuys');
+      this.store.update('groupBuys', groupBuyId, { status: 'closed' });
       throw business('活动已截止');
     }
     if (gb.participants.some(p => p.memberId === memberId)) {
@@ -85,39 +84,34 @@ class GroupBuyManager {
     }
     if (gb.participants.length >= gb.maxParticipants) throw business('参团人数已满');
 
-    gb.participants.push({
+    const participants = gb.participants.concat([{
       memberId,
       role: gb.participants.length === 0 ? 'leader' : 'member',
       joinedAt: new Date().toISOString()
-    });
+    }]);
 
-    if (gb.participants.length >= gb.minParticipants) {
-      gb.status = 'success';
-      gb.successAt = gb.successAt || new Date().toISOString();
+    const patch = { participants };
+    if (participants.length >= gb.minParticipants) {
+      patch.status = 'success';
+      patch.successAt = gb.successAt || new Date().toISOString();
     }
-    this.store.markDirty('groupBuys');
-    return this._decorate(gb);
+    return this._decorate(this.store.update('groupBuys', groupBuyId, patch));
   }
 
   cancel(id) {
     const gb = this.store.findById('groupBuys', id);
     if (!gb) throw business('团购活动不存在');
     if (gb.status === 'cancelled') return gb;
-    gb.status = 'cancelled';
-    this.store.markDirty('groupBuys');
-    return gb;
+    return this.store.update('groupBuys', id, { status: 'cancelled' });
   }
 
   _autoCloseExpired() {
     const now = Date.now();
-    let changed = false;
-    for (const gb of this.store.collection('groupBuys')) {
-      if ((gb.status === 'active' || gb.status === 'success') && new Date(gb.endAt).getTime() < now) {
-        if (gb.status === 'active') gb.status = 'closed';
-        changed = true;
+    for (const gb of this.store.find('groupBuys', () => true)) {
+      if (gb.status === 'active' && new Date(gb.endAt).getTime() < now) {
+        this.store.update('groupBuys', gb.id, { status: 'closed' });
       }
     }
-    if (changed) this.store.markDirty('groupBuys');
   }
 
   _decorate(gb) {

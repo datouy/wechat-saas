@@ -73,8 +73,8 @@ class CouponManager {
     const now = Date.now();
     for (const c of list) {
       if (c.status === 'unused' && new Date(c.expireAt).getTime() < now) {
+        this.store.update('coupons', c.id, { status: 'expired' });
         c.status = 'expired';
-        this.store.markDirty('coupons');
       }
     }
     if (status) list = list.filter(c => c.status === status);
@@ -98,11 +98,7 @@ class CouponManager {
     const c = this.store.findById('coupons', couponId);
     if (!c) throw business('优惠券不存在');
     if (c.status !== 'unused') throw business('优惠券已使用或已被占用');
-    c.status = 'reserved';
-    c.reservedByOrderId = orderId;
-    c.reservedAt = new Date().toISOString();
-    this.store.markDirty('coupons');
-    return c;
+    return this.store.update('coupons', couponId, { status: 'reserved', reservedByOrderId: orderId, reservedAt: new Date().toISOString() });
   }
 
   /** 取消订单时释放预留 */
@@ -110,10 +106,7 @@ class CouponManager {
     const c = this.store.findById('coupons', couponId);
     if (!c) return;
     if (c.status === 'reserved' && c.reservedByOrderId === orderId) {
-      c.status = 'unused';
-      c.reservedByOrderId = null;
-      c.reservedAt = null;
-      this.store.markDirty('coupons');
+      this.store.update('coupons', couponId, { status: 'unused', reservedByOrderId: null, reservedAt: null });
     }
   }
 
@@ -122,10 +115,7 @@ class CouponManager {
     const c = this.store.findById('coupons', couponId);
     if (!c) return;
     if (c.status === 'reserved' || c.status === 'unused') {
-      c.status = 'used';
-      c.usedAt = new Date().toISOString();
-      c.reservedByOrderId = null;
-      this.store.markDirty('coupons');
+      this.store.update('coupons', couponId, { status: 'used', usedAt: new Date().toISOString(), reservedByOrderId: null });
     }
   }
 }

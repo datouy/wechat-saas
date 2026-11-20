@@ -7,6 +7,7 @@ const fs = require('fs');
 process.chdir(path.join(__dirname, '..'));
 
 const JsonStore = require('../src/store/JsonStore');
+const SqliteStore = require('../src/store/SqliteStore');
 const ProductManager = require('../src/core/ProductManager');
 const MemberManager = require('../src/core/MemberManager');
 const PointsManager = require('../src/core/PointsManager');
@@ -34,7 +35,8 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || '断言失败'); 
   // 独立测试数据目录
   const testDir = path.join(__dirname, 'test-data-' + Date.now());
   fs.mkdirSync(testDir, { recursive: true });
-  const store = new JsonStore(testDir);
+  const Store = (process.env.DATA_STORE === 'sqlite') ? SqliteStore : JsonStore;
+  const store = new Store(testDir);
   store.initialize();
 
   const wechat = new WechatService({ mock: true });
@@ -199,6 +201,7 @@ function assert(cond, msg) { if (!cond) throw new Error(msg || '断言失败'); 
   });
 
   // 清理测试数据
+  store.shutdown();
   fs.rmSync(testDir, { recursive: true, force: true });
 
   console.log('\n===== 测试结果 =====');

@@ -86,7 +86,10 @@ class WechatSaas {
       next();
     });
 
-    this.store = new JsonStore(config.dataDir);
+    // 按 DATA_STORE 选择后端；sqlite 延迟加载，避免默认 JSON 模式下触发 node:sqlite 实验警告
+    this.store = (config.dataStore === 'sqlite')
+      ? new (require('./store/SqliteStore'))(config.dataDir)
+      : new JsonStore(config.dataDir);
     this.tenantManager = new TenantManager(this.store);
     this.auth = new AuthService(config.auth);
     this.adminService = new AdminService(this.store, this.auth, config.admin);

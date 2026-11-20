@@ -121,6 +121,9 @@ npm run test:all
 - `npm run test:http`：会员/管理员令牌、越权访问、租户隔离（12 项）
 - `npm run test:pay`：微信支付 v3 RSA 签名 / 回调验签 / AES-GCM 解密（4 项）
 - `npm run test:validation`：参数校验、分页、安全头、审计日志（11 项）
+- `npm run test:tenant`：多租户隔离、未知租户拒绝、登录不信任自报 tenantId（6 项）
+- `npm run test:sqlite`：SQLite 后端核心业务全链路（28 项）
+- `npm run test:concurrency`：多进程并发扣库存，验证原子扣减不超卖
 
 ## 🚀 部署
 
@@ -139,15 +142,15 @@ docker compose up -d --build
 - **微信支付 v3**：RSA-SHA256 下单签名、回调验签 + AES-256-GCM 解密、金额/商户号/AppID 校验、退款，小程序 `wx.requestPayment`
 - **交易一致性**：库存「可用+预留」语义（下单扣可用、支付后记销量）、优惠券 reserved/used/released、成团后仍可参团、已支付订单需走退款
 - **参数校验**：Zod 入口校验，统一错误码 + requestId
-- **存储**：JSON 原子写入（临时文件+fsync+rename）、损坏 fail-fast、写失败保留脏标记
+- **存储**：JSON 原子写入与内置 SQLite 双后端；SQLite 提供跨集合 ACID 事务与原子条件扣减防超卖（`DATA_STORE=sqlite` 启用）
 - **安全**：Helmet、登录/全局限流、管理后台存储型 XSS 转义、CORS 白名单预留
 - **分页/审计**：管理端列表分页、操作审计日志
 
 ## ⚠️ 当前边界
 
-- 数据存储为 JSON 文件（已原子写入），适合单机和小规模使用（<1万订单）；规模增长后请迁移 PostgreSQL（见 `docs/数据库迁移.md`）
+- 默认 JSON 文件存储适合单机小规模（<1万订单）；`DATA_STORE=sqlite` 可启用内置 SQLite 后端（ACID 事务 + 原子扣减防超卖，支持多进程/多实例），规模再增长可迁移 PostgreSQL（见 `docs/数据库迁移.md`）
 - 真实微信支付 v3 已实现，但需要真实商户证书/APIv3 密钥/平台证书才能端到端联调（本地用生成的 RSA 密钥验证了加解密往返）
-- 公开目录（首页/商品/团购/问卷列表）仍使用 `X-Tenant-Id` 标识商户；敏感身份与写操作均需令牌鉴权
+- 公开目录（首页/商品/团购/问卷列表）通过 `X-Tenant-Id` 定位租户，租户 ID 必须命中注册表（`TenantManager`），非法租户返回 400；敏感身份与写操作均需令牌鉴权
 
 ## License
 

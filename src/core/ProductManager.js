@@ -92,33 +92,29 @@ class ProductManager {
     const p = this.get(productId);
     if (!p) throw business('商品不存在');
     if (p.stock < qty) return false;
-    p.stock -= qty;
-    this.store.markDirty('products');
-    return true;
+    // 原子条件扣减：防并发超卖
+    return this.store.atomicDec('products', productId, 'stock', qty);
   }
 
   /** 取消/超时释放库存（不影响销量） */
   restoreStock(productId, qty) {
     const p = this.get(productId);
     if (!p) return;
-    p.stock += qty;
-    this.store.markDirty('products');
+    this.store.update('products', productId, { stock: p.stock + qty });
   }
 
   /** 支付成功后累加销量 */
   increaseSales(productId, qty) {
     const p = this.get(productId);
     if (!p) return;
-    p.sales += qty;
-    this.store.markDirty('products');
+    this.store.update('products', productId, { sales: p.sales + qty });
   }
 
   /** 退款时回退销量 */
   decreaseSales(productId, qty) {
     const p = this.get(productId);
     if (!p) return;
-    p.sales = Math.max(0, p.sales - qty);
-    this.store.markDirty('products');
+    this.store.update('products', productId, { sales: Math.max(0, p.sales - qty) });
   }
 }
 

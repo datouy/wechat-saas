@@ -96,6 +96,22 @@ class JsonStore {
     return this.collection(name).filter(predicate || (() => true)).length;
   }
 
+  /** 跨集合事务：JSON 为单进程内存模型，此处直通执行（错误回滚由业务层 try/catch 保证） */
+  transaction(fn) {
+    return fn();
+  }
+
+  /** 原子条件扣减：仅当 field 当前值 >= qty 时扣减，返回是否成功（防超卖） */
+  atomicDec(name, id, field, qty) {
+    const doc = this.findById(name, id);
+    if (!doc) return false;
+    const cur = Number(doc[field]) || 0;
+    if (cur < qty) return false;
+    doc[field] = cur - qty;
+    this.markDirty(name);
+    return true;
+  }
+
   markDirty(name) {
     this.dirty.add(name);
     if (this.saveTimer) return;

@@ -38,7 +38,7 @@ class MemberManager {
       this.store.insert('members', member);
     } else {
       member.lastLoginAt = new Date().toISOString();
-      this.store.markDirty('members');
+      this.store.update('members', member.id, { lastLoginAt: member.lastLoginAt });
     }
     return member;
   }
@@ -67,10 +67,10 @@ class MemberManager {
       detail: String(address.detail || '').slice(0, 200),
       isDefault: !!address.isDefault
     };
-    if (addr.isDefault) member.addresses.forEach(a => (a.isDefault = false));
-    if (member.addresses.length === 0) addr.isDefault = true;
-    member.addresses.push(addr);
-    this.store.markDirty('members');
+    const addresses = member.addresses.map(a => (addr.isDefault ? { ...a, isDefault: false } : a));
+    if (addresses.length === 0) addr.isDefault = true;
+    addresses.push(addr);
+    this.store.update('members', memberId, { addresses });
     return addr;
   }
 
@@ -79,18 +79,19 @@ class MemberManager {
     const member = this.get(memberId);
     if (!member) return false;
     const before = member.addresses.length;
-    member.addresses = member.addresses.filter(a => a.id !== addressId);
-    this.store.markDirty('members');
-    return member.addresses.length < before;
+    const addresses = member.addresses.filter(a => a.id !== addressId);
+    this.store.update('members', memberId, { addresses });
+    return addresses.length < before;
   }
 
   /** 会员消费统计更新（下单支付成功后调用） */
   recordSpending(memberId, amount) {
     const member = this.get(memberId);
     if (!member) return;
-    member.totalSpent = Math.round((member.totalSpent + amount) * 100) / 100;
-    member.orderCount += 1;
-    this.store.markDirty('members');
+    this.store.update('members', memberId, {
+      totalSpent: Math.round((member.totalSpent + amount) * 100) / 100,
+      orderCount: member.orderCount + 1
+    });
   }
 
   /** 商户下会员列表 */

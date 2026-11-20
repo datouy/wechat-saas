@@ -11,7 +11,9 @@
     "test:pay": "node tests/wechatpay-v3.js",
     "test:validation": "node tests/http-validation.js",
     "test:tenant": "node tests/http-tenant.js",
-    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation && npm run test:tenant"
+    "test:sqlite": "node tests/run-sqlite.js",
+    "test:concurrency": "node tests/concurrency-oversell.js",
+    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation && npm run test:tenant && npm run test:sqlite && npm run test:concurrency"
   },
   "keywords": [
     "wechat",

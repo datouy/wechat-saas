@@ -8,6 +8,8 @@ const config = {
     host: process.env.HOST || '0.0.0.0'
   },
   dataDir: process.env.DATA_DIR || './data',
+  // 存储后端：json（默认）| sqlite（ACID 事务 + 原子扣减防超卖）
+  dataStore: process.env.DATA_STORE || 'json',
   env: process.env.NODE_ENV || 'development',
   // 跨域白名单（逗号分隔）；为空表示不允许任何跨域来源
   cors: {
