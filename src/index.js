@@ -54,21 +54,23 @@ class WechatSaas {
       next();
     });
 
-    // 接口限流：全局 + 登录接口更严格
-    this.app.use(rateLimit({
-      windowMs: 15 * 60 * 1000,
-      limit: 1000,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { success: false, code: 'RATE_LIMITED', error: '请求过于频繁，请稍后再试' }
-    }));
-    this.app.use(['/api/wx/login', '/api/admin/login'], rateLimit({
-      windowMs: 15 * 60 * 1000,
-      limit: 20,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { success: false, code: 'RATE_LIMITED', error: '登录尝试过于频繁，请稍后再试' }
-    }));
+    // 接口限流：全局 + 登录接口更严格（基于单进程内存；多实例下各自计数，可经 RATE_LIMIT_DISABLED 交由网关统一限流）
+    if (!config.rateLimit.disabled) {
+      this.app.use(rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: 1000,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { success: false, code: 'RATE_LIMITED', error: '请求过于频繁，请稍后再试' }
+      }));
+      this.app.use(['/api/wx/login', '/api/admin/login'], rateLimit({
+        windowMs: 15 * 60 * 1000,
+        limit: 20,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { success: false, code: 'RATE_LIMITED', error: '登录尝试过于频繁，请稍后再试' }
+      }));
+    }
 
     // 保留原始请求体，供微信支付回调验签使用
     this.app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));

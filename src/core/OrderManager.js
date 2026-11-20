@@ -24,6 +24,7 @@ class OrderManager {
   }
 
   initialize() {
+    if (this.config.housekeepingEnabled === false) return;
     this.timer = setInterval(() => this._housekeeping(), 60000);
   }
 

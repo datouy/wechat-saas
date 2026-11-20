@@ -15,6 +15,10 @@ const config = {
   cors: {
     origins: (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
   },
+  // 限流：应用内限流基于单进程内存，多实例下各实例独立计数；若由网关统一限流可关闭
+  rateLimit: {
+    disabled: process.env.RATE_LIMIT_DISABLED === 'true'
+  },
   wechat: {
     appId: process.env.WX_APPID || '',
     appSecret: process.env.WX_SECRET || '',
@@ -46,20 +50,23 @@ const config = {
   orders: {
     payTimeoutMinutes: Number(process.env.ORDER_PAY_TIMEOUT_MINUTES) || 30,
     autoCompleteDays: Number(process.env.ORDER_AUTO_COMPLETE_DAYS) || 3,
-    deliveryFee: 0
+    deliveryFee: Number(process.env.ORDER_DELIVERY_FEE) || 0,
+    // 多实例部署时可在除“后台任务实例”外的节点关闭，避免每实例重复跑定时器（幂等，关闭仅为省资源/减锁竞争）
+    housekeepingEnabled: process.env.ORDER_HOUSEKEEPING_ENABLED !== 'false'
   },
   points: {
-    enabled: true,
+    enabled: process.env.POINTS_ENABLED !== 'false',
     ratePerYuan: Number(process.env.POINTS_RATE_PER_YUAN) || 1,
-    commentReward: 5,
-    maxPercentPerOrder: 50
+    commentReward: Number(process.env.POINTS_COMMENT_REWARD ?? 5),
+    maxPercentPerOrder: Number(process.env.POINTS_MAX_PERCENT ?? 50)
   },
   coupon: {
-    maxPerOrder: 1
+    maxPerOrder: Number(process.env.COUPON_MAX_PER_ORDER ?? 1)
   },
   groupBuy: {
     minParticipants: 2,
-    autoCloseHours: Number(process.env.GROUPBUY_CLOSE_HOURS) || 24
+    autoCloseHours: Number(process.env.GROUPBUY_CLOSE_HOURS) || 24,
+    autoCloseEnabled: process.env.GROUPBUY_AUTOCLOSE_ENABLED !== 'false'
   },
   log: {
     level: process.env.LOG_LEVEL || 'info'

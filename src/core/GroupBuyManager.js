@@ -17,6 +17,7 @@ class GroupBuyManager {
   }
 
   initialize() {
+    if (this.config.autoCloseEnabled === false) return;
     this.timer = setInterval(() => this._autoCloseExpired(), 60000);
   }
 
