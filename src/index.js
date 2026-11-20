@@ -71,11 +71,17 @@ class WechatSaas {
 
     // 保留原始请求体，供微信支付回调验签使用
     this.app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
+    // CORS：仅允许配置白名单内的跨域来源，不再通配 '*'
+    const allowedOrigins = new Set(config.cors.origins);
     this.app.use((req, res, next) => {
-      res.header('Access-Control-Allow-Origin', '*');
-      res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tenant-Id');
-      res.header('Access-Control-Expose-Headers', 'X-Request-Id');
-      res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      const origin = req.headers.origin;
+      if (origin && allowedOrigins.has(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Vary', 'Origin');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Tenant-Id');
+        res.header('Access-Control-Expose-Headers', 'X-Request-Id');
+        res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+      }
       if (req.method === 'OPTIONS') return res.sendStatus(204);
       next();
     });

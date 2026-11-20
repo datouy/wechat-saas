@@ -9,6 +9,10 @@ const config = {
   },
   dataDir: process.env.DATA_DIR || './data',
   env: process.env.NODE_ENV || 'development',
+  // 跨域白名单（逗号分隔）；为空表示不允许任何跨域来源
+  cors: {
+    origins: (process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean)
+  },
   wechat: {
     appId: process.env.WX_APPID || '',
     appSecret: process.env.WX_SECRET || '',
