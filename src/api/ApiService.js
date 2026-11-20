@@ -17,7 +17,8 @@ class ApiService {
     const { app } = this;
     const { store, config, tenantManager, auth, adminService, productManager: pm, orderManager: om,
             memberManager: mm, pointsManager: pts, couponManager: cm, groupBuyManager: gbm,
-            formManager: fm, appointmentManager: am, statsService: stats, auditLog, reconciliation, wechat } = this.deps;
+            formManager: fm, appointmentManager: am, statsService: stats, todayService,
+            notifications, auditLog, reconciliation, wechat } = this.deps;
 
     // ---------- 通用工具 ----------
     const ok = (res, data) => res.json({ success: true, data });
@@ -87,6 +88,32 @@ class ApiService {
       const m = mm.get(req.memberId);
       if (!m || m.tenantId !== req.tenantId) return null;
       return m;
+    };
+
+    const orderDetail = (order) => {
+      const member = mm.get(order.memberId);
+      const refundable = Math.max(0, Number(order.payAmount) - Number(order.refundedAmount || 0));
+      const actions = [];
+      if (order.status === 'paid' && order.deliveryType !== 'pickup') {
+        actions.push({ id: 'deliver', label: '发货', method: 'POST', href: '/api/admin/orders/' + order.id + '/deliver' });
+      }
+      if (order.status === 'paid' && order.deliveryType === 'pickup') {
+        actions.push({ id: 'verify-pickup', label: '核销取货', method: 'POST', href: '/api/admin/orders/' + order.id + '/verify-pickup' });
+      }
+      if (['paid', 'delivering', 'completed'].includes(order.status) && refundable > 0) {
+        actions.push({ id: 'refund', label: '退款', method: 'POST', href: '/api/admin/orders/' + order.id + '/refund' });
+      }
+      return {
+        ...order,
+        refundableAmount: refundable,
+        member: member ? {
+          id: member.id,
+          nickname: member.nickname,
+          phone: member.phone,
+          avatar: member.avatar
+        } : null,
+        availableActions: actions
+      };
     };
 
     // 公开目录仍可无登录访问，用于商户展示；敏感身份接口均需鉴权
@@ -358,6 +385,10 @@ class ApiService {
       ok(res, stats.dashboard(req.tenantId));
     }));
 
+    app.get('/api/admin/today', authAdmin, wrap(async (req, res) => {
+      ok(res, todayService.dashboard(req.tenantId));
+    }));
+
     app.get('/api/admin/categories', authAdmin, wrap(async (req, res) => {
       ok(res, paginate(req, pm.listCategories(req.tenantId)));
     }));
@@ -366,7 +397,25 @@ class ApiService {
     }));
 
     app.get('/api/admin/products', authAdmin, wrap(async (req, res) => {
-      ok(res, paginate(req, pm.list(req.tenantId, { keyword: req.query.keyword }).map(p => this._priceView(p))));
+      let products = pm.list(req.tenantId, { keyword: req.query.keyword });
+      if (req.query.stock === 'low') {
+        products = products.filter(p => p.onSale && Number(p.stock) <= Number(config.inventory.lowStockThreshold));
+      }
+      ok(res, paginate(req, products.map(p => this._priceView(p))));
+    }));
+    app.get('/api/admin/products/:id', authAdmin, wrap(async (req, res) => {
+      const p = pm.get(req.params.id);
+      if (!p || p.tenantId !== req.tenantId) throw business('商品不存在');
+      const category = p.categoryId ? pm.listCategories(req.tenantId).find(c => c.id === p.categoryId) : null;
+      ok(res, {
+        ...this._priceView(p),
+        category: category ? { id: category.id, name: category.name } : null,
+        availableActions: [
+          { id: 'edit', label: '编辑', method: 'PUT', href: '/api/admin/products/' + p.id },
+          { id: p.onSale ? 'take-offline' : 'publish', label: p.onSale ? '下架' : '上架', method: 'PUT', href: '/api/admin/products/' + p.id },
+          { id: 'delete', label: '删除', method: 'DELETE', href: '/api/admin/products/' + p.id }
+        ]
+      });
     }));
     app.post('/api/admin/products', authAdmin, wrap(async (req, res) => {
       const p = pm.create(req.tenantId, validate('productCreate', req.body));
@@ -389,6 +438,11 @@ class ApiService {
 
     app.get('/api/admin/orders', authAdmin, wrap(async (req, res) => {
       ok(res, paginate(req, om.listByTenant(req.tenantId, { status: req.query.status, keyword: req.query.keyword })));
+    }));
+    app.get('/api/admin/orders/:id', authAdmin, wrap(async (req, res) => {
+      const o = om.get(req.params.id);
+      if (!o || o.tenantId !== req.tenantId) throw business('订单不存在');
+      ok(res, orderDetail(o));
     }));
     app.post('/api/admin/orders/:id/deliver', authAdmin, wrap(async (req, res) => {
       const o = om.get(req.params.id);

@@ -31,6 +31,11 @@ const config = {
       try { return JSON.parse(process.env.WX_PAY_PLATFORM_CERTS || '{}'); }
       catch (e) { return {}; }
     })(),
+    // 订阅消息模板：{"orderPaid":{"templateId":"...","page":"pages/orders/orders","data":{...}}}
+    subscribeTemplates: (() => {
+      try { return JSON.parse(process.env.WX_SUBSCRIBE_TEMPLATES || '{}'); }
+      catch (e) { return {}; }
+    })(),
     notifyUrl: process.env.WX_NOTIFY_URL || 'https://your-domain.com/api/wx/pay/notify',
     mock: process.env.WX_MOCK !== 'false'
   },
@@ -67,6 +72,12 @@ const config = {
     minParticipants: 2,
     autoCloseHours: Number(process.env.GROUPBUY_CLOSE_HOURS) || 24,
     autoCloseEnabled: process.env.GROUPBUY_AUTOCLOSE_ENABLED !== 'false'
+  },
+  inventory: {
+    lowStockThreshold: Number(process.env.LOW_STOCK_THRESHOLD) || 10
+  },
+  today: {
+    endingSoonHours: Number(process.env.GROUPBUY_ENDING_SOON_HOURS) || 24
   },
   log: {
     level: process.env.LOG_LEVEL || 'info'

@@ -24,6 +24,7 @@ const ReconciliationService = require('./core/ReconciliationService');
 const FormManager = require('./core/FormManager');
 const AppointmentManager = require('./core/AppointmentManager');
 const StatsService = require('./core/StatsService');
+const TodayService = require('./core/TodayService');
 const AuditLog = require('./core/AuditLog');
 const TenantManager = require('./core/TenantManager');
 const WechatService = require('./services/WechatService');
@@ -122,6 +123,10 @@ class WechatSaas {
     this.formManager = new FormManager(this.store);
     this.appointmentManager = new AppointmentManager(this.store);
     this.statsService = new StatsService(this.store);
+    this.todayService = new TodayService(this.store, this.statsService, {
+      lowStockThreshold: config.inventory.lowStockThreshold,
+      endingSoonHours: config.today.endingSoonHours
+    });
     this.auditLog = new AuditLog(this.store);
   }
 
@@ -157,6 +162,7 @@ class WechatSaas {
       formManager: this.formManager,
       appointmentManager: this.appointmentManager,
       statsService: this.statsService,
+      todayService: this.todayService,
       auditLog: this.auditLog,
       reconciliation: this.reconciliation,
       wechat: this.wechat
