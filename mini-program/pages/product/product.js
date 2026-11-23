@@ -20,11 +20,12 @@ Page({
     var requests = [api.request('/api/wx/products/' + this.productId)];
     if (this.groupBuyId) requests.push(api.request('/api/wx/groupbuys/' + this.groupBuyId));
     Promise.all(requests).then(function(r) {
-      that.setData({ product: r[0], groupBuy: r[1] || null, loading: false });
+      var product = Object.assign({}, r[0], { image: api.assetUrl(r[0].image) });
+      that.setData({ product: product, groupBuy: r[1] || null, loading: false });
       if (r[1]) that.updateGroup(r[1]);
     }).catch(function(e) {
       that.setData({ loading: false });
-      wx.showToast({ title: e.message, icon: 'none' });
+      api.showError(e, '商品加载失败');
     });
   },
   updateGroup(gb) {
@@ -58,7 +59,7 @@ Page({
       that.updateGroup(updated);
       if (updated.status === 'success') that.checkout();
       else wx.showToast({ title: '已参团，还差 ' + updated.remaining + ' 人', icon: 'none' });
-    }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    }).catch(function(e) { api.showError(e, '参团失败'); });
   },
   checkout() {
     var url = '/pages/checkout/checkout?id=' + this.productId;

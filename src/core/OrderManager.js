@@ -7,7 +7,7 @@
  * 支付成功后：核销优惠券、累计消费、发放积分、累加商品销量
  */
 
-const { business } = require('../errors');
+const { business, AppError } = require('../errors');
 const { randomUUID: uuidv4, randomInt } = require('crypto');
 
 class OrderManager {
@@ -20,13 +20,16 @@ class OrderManager {
     this.wechat = deps.wechatService;
     this.notifications = deps.notifications || null;
     this.groupBuys = deps.groupBuyManager || null;
-    this.config = deps.config || { payTimeoutMinutes: 30, autoCompleteDays: 3, deliveryFee: 0 };
+    this.locations = deps.locationService || null;
+    this.auditLog = deps.auditLog || null;
+    this.config = deps.config || { payTimeoutMinutes: 30, autoCompleteDays: 3, deliveryFee: 0, pickupReminderHours: 12 };
     this.timer = null;
   }
 
   initialize() {
     if (this.config.housekeepingEnabled === false) return;
-    this.timer = setInterval(() => this._housekeeping(), 60000);
+    this.timer = setInterval(() => this._housekeeping().catch(error => console.error('[Order] 定时任务失败:', error.message)), 60000);
+    if (this.timer.unref) this.timer.unref();
   }
 
   /** 生成订单号: NT + 日期 + 6位随机 */
@@ -43,25 +46,31 @@ class OrderManager {
    * items: [{productId, quantity}]
    * options: { usePoints, couponId, addressId, remark, groupBuyId, deliveryType }
    */
-  create(tenantId, memberId, items, options = {}) {
+  async create(tenantId, memberId, items, options = {}) {
     if (!Array.isArray(items) || items.length === 0) throw business('订单商品不能为空');
-    const member = this.members.get(memberId);
+    const member = await this.members.get(memberId);
     if (!member || member.tenantId !== tenantId) throw business('会员不存在');
     const deliveryType = options.deliveryType === 'pickup' ? 'pickup' : 'delivery';
     let deliveryAddress = null;
+    let pickupLocation = null;
     if (deliveryType === 'delivery') {
       if (options.deliveryType === 'delivery' && !options.addressId) throw business('请选择收货地址');
       if (options.addressId) {
         deliveryAddress = (member.addresses || []).find(a => a.id === options.addressId) || null;
         if (!deliveryAddress) throw business('收货地址无效');
       }
+    } else if (this.locations) {
+      pickupLocation = options.pickupLocationId
+        ? await this.locations.get(options.pickupLocationId, tenantId)
+        : await this.locations.primary(tenantId);
+      if (!pickupLocation || pickupLocation.status !== 'active' || !pickupLocation.pickupEnabled) throw business('自提门店不可用');
     }
 
     // 1. 校验商品、库存与团购价资格
     const orderItems = [];
     let goodsAmount = 0;
     for (const it of items) {
-      const p = this.products.get(it.productId);
+      const p = await this.products.get(it.productId);
       if (!p || p.tenantId !== tenantId) throw business('商品不存在: ' + it.productId);
       if (!p.onSale) throw business('商品已下架: ' + p.name);
       const qty = Math.floor(Number(it.quantity) || 0);
@@ -70,7 +79,7 @@ class OrderManager {
 
       let unitPrice = p.price;
       if (options.groupBuyId) {
-        const gb = this.store.findById('groupBuys', options.groupBuyId);
+        const gb = await this.store.findById('groupBuys', options.groupBuyId);
         if (!gb || gb.tenantId !== tenantId || gb.productId !== p.id) throw business('团购活动无效');
         // 团购下单要求已成团，避免未成团即支付、成团失败后无法退款的资金风险
         if (gb.status !== 'success') throw business('团购尚未成团，暂不可下单');
@@ -95,7 +104,7 @@ class OrderManager {
     let couponDiscount = 0;
     let coupon = null;
     if (options.couponId) {
-      coupon = this.coupons.validate(options.couponId, memberId, goodsAmount);
+      coupon = await this.coupons.validate(options.couponId, memberId, goodsAmount);
       couponDiscount = Math.min(coupon.amount, goodsAmount);
     }
 
@@ -103,7 +112,7 @@ class OrderManager {
     let pointsUsed = 0;
     let pointsDiscount = 0;
     if (options.usePoints && this.points.config.enabled) {
-      const calc = this.points.calcDiscount(memberId, (goodsAmount - couponDiscount) / 100, options.usePoints);
+      const calc = await this.points.calcDiscount(memberId, (goodsAmount - couponDiscount) / 100, options.usePoints);
       pointsUsed = calc.pointsUsed;
       pointsDiscount = Math.round(calc.discount * 100);
     }
@@ -116,27 +125,20 @@ class OrderManager {
     const orderId = uuidv4();
     const orderNo = this._orderNo();
 
-    // 5. 落库（扣库存 -> 扣积分 -> 预留优惠券 -> 插入订单），失败回滚
-    try {
+    // 5. 在单个事务中扣库存、扣积分、预占优惠券并创建订单
+    return this.store.transaction(async () => {
       for (const it of orderItems) {
-        if (!this.products.deductStock(it.productId, it.quantity)) {
+        if (!await this.products.deductStock(it.productId, it.quantity)) {
           throw business('库存不足: ' + it.name);
         }
       }
       if (pointsUsed > 0) {
-        this.points.change(memberId, -pointsUsed, '订单积分抵扣', orderNo);
+        await this.points.change(memberId, -pointsUsed, '订单积分抵扣', orderNo);
       }
       if (coupon) {
-        this.coupons.reserve(coupon.id, orderId);
+        await this.coupons.reserve(coupon.id, orderId);
       }
-    } catch (e) {
-      for (const it of orderItems) this.products.restoreStock(it.productId, it.quantity);
-      if (pointsUsed > 0) this.points.change(memberId, pointsUsed, '订单抵扣回滚', orderNo);
-      if (coupon) this.coupons.release(coupon.id, orderId);
-      throw e;
-    }
-
-    const order = {
+      const order = {
       id: orderId,
       orderNo,
       tenantId,
@@ -151,6 +153,14 @@ class OrderManager {
       payAmount,
       status: 'pending',
       address: deliveryAddress,
+      pickupLocationId: pickupLocation ? pickupLocation.id : null,
+      pickupLocation: pickupLocation ? {
+        id: pickupLocation.id,
+        name: pickupLocation.name,
+        address: pickupLocation.address,
+        phone: pickupLocation.phone,
+        hours: pickupLocation.hours
+      } : null,
       deliveryType,
       pickupCode: deliveryType === 'pickup' ? String(randomInt(100000, 1000000)) : null,
       pickupVerifiedAt: null,
@@ -162,14 +172,16 @@ class OrderManager {
       paidAt: null,
       completedAt: null,
       cancelledAt: null
-    };
-    this.store.insert('orders', order);
-    return order;
+      };
+      await this.store.insert('orders', order);
+      await this._audit(order, 'member', 'order.create', memberId, { orderNo, amount: payAmount, deliveryType });
+      return order;
+    });
   }
 
   /** 支付订单：mock模式直接标记已支付；真实模式返回 wx.requestPayment 参数（openid 从会员记录推导） */
   async pay(orderId, memberId) {
-    const order = this.store.findById('orders', orderId);
+    const order = await this.store.findById('orders', orderId);
     if (!order) throw business('订单不存在');
     if (order.memberId !== memberId) throw business('无权操作此订单');
     if (order.status === 'paid') {
@@ -184,11 +196,16 @@ class OrderManager {
         transactionId: 'MOCK' + Date.now(),
         paidAt: new Date().toISOString()
       };
-      this._onPaid(order, payResult);
-      return { success: true, mock: true, order };
+      await this._onPaid(order, payResult);
+      return { success: true, mock: true, order: await this.store.findById('orders', orderId) || order };
     }
 
-    const member = this.members.get(memberId);
+    if (!this.wechat.config.paymentEnabled) {
+      throw new AppError('真实微信支付尚未启用，请使用模拟支付完成试点验收', {
+        code: 'PAYMENT_DISABLED', status: 503
+      });
+    }
+    const member = await this.members.get(memberId);
     const payResult = await this.wechat.createJsapiOrder({
       orderNo: order.orderNo,
       amount: order.payAmount,
@@ -199,27 +216,36 @@ class OrderManager {
   }
 
   /** 支付成功回调（mock 或微信支付异步通知），幂等 */
-  _onPaid(order, payInfo) {
-    if (order.status !== 'pending') return false;
-    this.store.update('orders', order.id, { status: 'paid', paidAt: new Date().toISOString(), payInfo });
-
-    if (order.couponId) this.coupons.use(order.couponId);
-    this.members.recordSpending(order.memberId, order.payAmount / 100);
-    this.points.earnByOrder(order.memberId, order.orderNo, order.payAmount / 100);
-    for (const it of order.items) this.products.increaseSales(it.productId, it.quantity);
-
-    if (this.notifications) {
-      const paidOrder = this.store.findById('orders', order.id) || { ...order, status: 'paid' };
-      Promise.resolve(this.notifications.notifyOrder(paidOrder, 'orderPaid', { status: '已支付', time: paidOrder.paidAt }))
-        .catch(() => {});
-    }
-
-    return true;
+  async _onPaid(order, payInfo) {
+    return this.store.transaction(async () => {
+      const current = await this.store.findByIdForUpdate('orders', order.id);
+      if (!current || current.status !== 'pending') return false;
+      const paidOrder = await this.store.update('orders', current.id, {
+        status: 'paid', paidAt: new Date().toISOString(), payInfo
+      });
+      if (current.couponId) await this.coupons.use(current.couponId);
+      await this.members.recordSpending(current.memberId, current.payAmount / 100);
+      await this.points.earnByOrder(current.memberId, current.orderNo, current.payAmount / 100);
+      for (const item of current.items) await this.products.increaseSales(item.productId, item.quantity);
+      if (this.notifications) {
+        await this.notifications.notifyOrder(paidOrder, 'orderPaid', { status: '已支付', time: paidOrder.paidAt });
+        if (paidOrder.deliveryType === 'pickup') {
+          await this.notifications.notifyOrder(paidOrder, 'pickupReady', {
+            status: '待取货', time: paidOrder.paidAt,
+            pickupLocation: paidOrder.pickupLocation ? paidOrder.pickupLocation.name : ''
+          });
+        }
+      }
+      await this._audit(paidOrder, 'member', 'order.pay', current.memberId, {
+        orderNo: current.orderNo, transactionId: payInfo && payInfo.transactionId, amount: current.payAmount
+      });
+      return true;
+    });
   }
 
   /** 微信支付回调处理（真实模式） */
-  handlePayNotify(orderNo, transactionId) {
-    const order = this.store.find('orders', o => o.orderNo === orderNo)[0];
+  async handlePayNotify(orderNo, transactionId) {
+    const order = (await this.store.find('orders', o => o.orderNo === orderNo))[0];
     if (!order) return false;
     if (order.status === 'paid') return true;
     if (order.status === 'pending') {
@@ -229,8 +255,8 @@ class OrderManager {
   }
 
   /** 微信支付回调（真实模式，已完成验签+解密+金额校验后调用） */
-  handlePayNotifyVerified(outTradeNo, transactionId, totalAmount) {
-    const order = this.store.find('orders', o => o.orderNo === outTradeNo)[0];
+  async handlePayNotifyVerified(outTradeNo, transactionId, totalAmount) {
+    const order = (await this.store.find('orders', o => o.orderNo === outTradeNo))[0];
     if (!order) return false;
     if (order.status === 'paid' || order.status === 'delivering' || order.status === 'completed') return true;
     if (order.status !== 'pending') return false;
@@ -243,9 +269,10 @@ class OrderManager {
   /** 申请退款（mock 即时退款；真实模式调用微信退款后等待退款回调确认）
    *  refundAmount 为退款金额（分）；缺省为剩余可退金额（全额）。支持部分退款，累计退款不超过实付。 */
   async refund(orderId, reason, refundAmount) {
-    const order = this.store.findById('orders', orderId);
+    const order = await this.store.findById('orders', orderId);
     if (!order) throw business('订单不存在');
     if (!['paid', 'delivering', 'completed'].includes(order.status)) throw business('当前订单状态不支持退款');
+    if (order.refund && order.refund.status === 'refunding') throw business('该订单已有退款正在处理');
 
     const alreadyRefunded = Math.round(Number(order.refundedAmount) || 0);
     const refundable = order.payAmount - alreadyRefunded;
@@ -256,6 +283,9 @@ class OrderManager {
       : Math.round(Number(refundAmount) || 0);
     if (!(target > 0)) throw business('退款金额必须大于0');
     if (target > refundable) throw business('退款金额超过可退金额');
+    if (!this.wechat.config.mock && !this.wechat.config.paymentEnabled) {
+      throw new AppError('真实微信退款尚未启用，请使用模拟退款验收流程', { code: 'PAYMENT_DISABLED', status: 503 });
+    }
 
     const outRefundNo = 'RF' + order.orderNo.slice(2) + Math.floor(Math.random() * 900 + 100);
     const refundInfo = {
@@ -265,11 +295,17 @@ class OrderManager {
       status: 'refunding',
       createdAt: new Date().toISOString()
     };
-    this.store.update('orders', order.id, { refund: refundInfo });
+    await this.store.update('orders', order.id, { refund: refundInfo });
     order.refund = refundInfo;
+    await this._audit(order, 'system', 'refund.submit', '', { orderNo: order.orderNo, amount: target, reason: refundInfo.reason, refundNo: outRefundNo });
+    if (this.notifications) {
+      await this.notifications.notifyOrder({ ...order, refund: refundInfo }, 'refundSubmitted', {
+        status: '退款处理中', amount: (target / 100).toFixed(2), time: refundInfo.createdAt
+      });
+    }
 
     if (this.wechat.config.mock) {
-      this._finalizeRefund(order, outRefundNo, target);
+      await this._finalizeRefund(order, outRefundNo, target);
       return { success: true, mock: true, order };
     }
     await this.wechat.refund({
@@ -283,71 +319,88 @@ class OrderManager {
   }
 
   /** 退款成功回调（真实模式，已验签+解密后调用） */
-  handleRefundNotifyVerified(resource) {
-    const order = this.store.find('orders', o => o.orderNo === resource.out_trade_no)[0];
+  async handleRefundNotifyVerified(resource) {
+    const order = (await this.store.find('orders', o => o.orderNo === resource.out_trade_no))[0];
     if (!order) return false;
     if (resource.refund_status === 'SUCCESS' && order.refund && order.refund.outRefundNo === resource.out_refund_no) {
       const amount = (resource.amount && resource.amount.refund) || (order.refund && order.refund.amount) || order.payAmount;
-      this._finalizeRefund(order, resource.out_refund_no, amount);
+      await this._finalizeRefund(order, resource.out_refund_no, amount);
       return true;
     }
     return false;
   }
 
   /** 退款完成：累计退款金额；全额退款时回补库存、回退销量、返还积分并结单 */
-  _finalizeRefund(order, refundNo, refundAmount) {
-    const amount = Math.round(Number(refundAmount) || 0);
-    const newRefunded = Math.round(Number(order.refundedAmount) || 0) + amount;
-    const isFull = newRefunded >= order.payAmount;
+  async _finalizeRefund(order, refundNo, refundAmount) {
+    return this.store.transaction(async () => {
+      const current = await this.store.findByIdForUpdate('orders', order.id);
+      if (!current) throw business('订单不存在');
+      if ((current.completedRefunds || []).some(item => item.refundNo === refundNo)) return current;
+      const amount = Math.round(Number(refundAmount) || 0);
+      const newRefunded = Math.round(Number(current.refundedAmount) || 0) + amount;
+      if (newRefunded > current.payAmount) throw business('退款金额超过订单实付');
+      const isFull = newRefunded >= current.payAmount;
 
-    const patch = { refundedAmount: newRefunded };
-    if (order.refund) patch.refund = { ...order.refund, status: 'refunded' };
+      const completedRefunds = (current.completedRefunds || []).concat([{
+      refundNo,
+      amount,
+      completedAt: new Date().toISOString()
+    }]);
+      const patch = { refundedAmount: newRefunded, completedRefunds };
+      if (current.refund) patch.refund = { ...current.refund, status: 'refunded' };
 
-    if (isFull) {
-      for (const it of order.items) {
-        this.products.restoreStock(it.productId, it.quantity);
-        this.products.decreaseSales(it.productId, it.quantity);
+      if (isFull) {
+        for (const item of current.items) {
+          await this.products.restoreStock(item.productId, item.quantity);
+          await this.products.decreaseSales(item.productId, item.quantity);
+        }
+        if (current.pointsUsed > 0) {
+          await this.points.change(current.memberId, current.pointsUsed, '退款返还积分', current.orderNo);
+        }
+        patch.status = 'refunded';
+        patch.refundedAt = new Date().toISOString();
       }
-      if (order.pointsUsed > 0) {
-        this.points.change(order.memberId, order.pointsUsed, '退款返还积分', order.orderNo);
+      const updated = await this.store.update('orders', current.id, patch);
+      await this._audit(updated || current, 'system', 'refund.complete', '', {
+        orderNo: current.orderNo, refundNo, amount, full: isFull
+      });
+      if (this.notifications) {
+        await this.notifications.notifyOrder(updated || { ...current, ...patch }, 'refundCompleted', {
+          status: isFull ? '已退款' : '部分退款', amount: (amount / 100).toFixed(2), time: new Date().toISOString()
+        });
       }
-      patch.status = 'refunded';
-      patch.refundedAt = new Date().toISOString();
-    }
-    const updated = this.store.update('orders', order.id, patch);
-    if (this.notifications) {
-      Promise.resolve(this.notifications.notifyOrder(updated || { ...order, ...patch }, 'refundCompleted', {
-        status: isFull ? '已退款' : '部分退款',
-        amount: (amount / 100).toFixed(2),
-        time: new Date().toISOString()
-      })).catch(() => {});
-    }
-    return updated;
+      return updated;
+    });
   }
 
   /** 取消订单（仅待支付；已支付请走退款流程） */
-  cancel(orderId, memberId, reason) {
-    const order = this.store.findById('orders', orderId);
+  async cancel(orderId, memberId, reason) {
+    return this.store.transaction(async () => {
+    const order = await this.store.findByIdForUpdate('orders', orderId);
     if (!order) throw business('订单不存在');
     if (memberId && order.memberId !== memberId) throw business('无权操作此订单');
     if (order.status !== 'pending') throw business('仅待支付订单可取消，已支付订单请走退款流程');
 
     for (const it of order.items) {
-      this.products.restoreStock(it.productId, it.quantity);
+      await this.products.restoreStock(it.productId, it.quantity);
     }
     if (order.pointsUsed > 0) {
-      this.points.change(order.memberId, order.pointsUsed, '取消订单返还积分', order.orderNo);
+      await this.points.change(order.memberId, order.pointsUsed, '取消订单返还积分', order.orderNo);
     }
     if (order.couponId) {
-      this.coupons.release(order.couponId, order.id);
+      await this.coupons.release(order.couponId, order.id);
     }
 
-    return this.store.update('orders', order.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelReason: reason || '用户取消' });
+    const updated = await this.store.update('orders', order.id, { status: 'cancelled', cancelledAt: new Date().toISOString(), cancelReason: reason || '用户取消' });
+    await this._audit(updated, memberId ? 'member' : 'system', 'order.cancel', memberId || '', { orderNo: order.orderNo, reason: reason || '用户取消' });
+    return updated;
+    });
   }
 
   /** 商家发货/完成配送；可附带物流信息（公司 + 单号） */
-  deliver(orderId, logistics) {
-    const order = this.store.findById('orders', orderId);
+  async deliver(orderId, logistics) {
+    return this.store.transaction(async () => {
+    const order = await this.store.findByIdForUpdate('orders', orderId);
     if (!order) throw business('订单不存在');
     if (order.status !== 'paid') throw business('仅已支付订单可发货');
     const patch = { status: 'delivering', deliveredAt: new Date().toISOString() };
@@ -357,31 +410,33 @@ class OrderManager {
         trackingNo: String(logistics.trackingNo || '').slice(0, 64)
       };
     }
-    const updated = this.store.update('orders', order.id, patch);
+    const updated = await this.store.update('orders', order.id, patch);
+    await this._audit(updated, 'admin', 'order.deliver', '', { orderNo: order.orderNo });
     if (this.notifications) {
-      Promise.resolve(this.notifications.notifyOrder(updated || { ...order, ...patch }, 'orderDelivered', {
+      await this.notifications.notifyOrder(updated || { ...order, ...patch }, 'orderDelivered', {
         status: order.deliveryType === 'pickup' ? '待自提' : '已发货',
         time: patch.deliveredAt
-      })).catch(() => {});
+      });
     }
     return updated;
+    });
   }
 
   /** 批量发货；逐单返回结果，单笔失败不会阻断其他订单。 */
-  batchDeliver(orderIds, logistics, tenantId) {
+  async batchDeliver(orderIds, logistics, tenantId) {
     if (!Array.isArray(orderIds) || orderIds.length === 0) throw business('请选择订单');
     const ids = [...new Set(orderIds.map(String))].slice(0, 100);
     const delivered = [];
     const failures = [];
     for (const id of ids) {
-      const order = this.store.findById('orders', id);
+      const order = await this.store.findById('orders', id);
       if (!order || order.tenantId !== tenantId) {
         failures.push({ id, error: '订单不存在' });
         continue;
       }
       try {
         if (order.deliveryType === 'pickup') throw business('自提订单请使用取货码核销');
-        delivered.push(this.deliver(id, logistics));
+        delivered.push(await this.deliver(id, logistics));
       } catch (e) {
         failures.push({ id, orderNo: order.orderNo, error: e.message });
       }
@@ -395,49 +450,56 @@ class OrderManager {
   }
 
   /** 自提核销：校验取货码后将已支付订单直接完成。 */
-  verifyPickup(orderId, pickupCode, tenantId) {
-    const order = this.store.findById('orders', orderId);
+  async verifyPickup(orderId, pickupCode, tenantId) {
+    return this.store.transaction(async () => {
+    const order = await this.store.findByIdForUpdate('orders', orderId);
     if (!order || (tenantId && order.tenantId !== tenantId)) throw business('订单不存在');
     if (order.deliveryType !== 'pickup') throw business('该订单不是自提订单');
     if (String(order.pickupCode || '') !== String(pickupCode || '')) throw business('取货码不正确');
     if (order.status === 'completed' && order.pickupVerifiedAt) return { alreadyCompleted: true, order };
     if (order.status !== 'paid') throw business('仅待自提订单可核销');
     const now = new Date().toISOString();
-    const updated = this.store.update('orders', order.id, {
+    const updated = await this.store.update('orders', order.id, {
       status: 'completed',
       pickupVerifiedAt: now,
       completedAt: now
     });
+    await this._audit(updated, 'admin', 'order.verify-pickup', '', { orderNo: order.orderNo });
     if (this.notifications) {
-      Promise.resolve(this.notifications.notifyOrder(updated || { ...order, status: 'completed' }, 'pickupCompleted', {
+      await this.notifications.notifyOrder(updated || { ...order, status: 'completed' }, 'pickupCompleted', {
         status: '已取货',
         time: now
-      })).catch(() => {});
+      });
     }
     return { alreadyCompleted: false, order: updated };
+    });
   }
 
   /** 确认收货 */
-  complete(orderId, memberId) {
-    const order = this.store.findById('orders', orderId);
+  async complete(orderId, memberId) {
+    return this.store.transaction(async () => {
+    const order = await this.store.findByIdForUpdate('orders', orderId);
     if (!order) throw business('订单不存在');
     if (memberId && order.memberId !== memberId) throw business('无权操作此订单');
     if (order.status !== 'delivering') throw business('仅配送中订单可确认收货');
-    return this.store.update('orders', order.id, { status: 'completed', completedAt: new Date().toISOString() });
+    const updated = await this.store.update('orders', order.id, { status: 'completed', completedAt: new Date().toISOString() });
+    await this._audit(updated, 'member', 'order.complete', memberId || '', { orderNo: order.orderNo });
+    return updated;
+    });
   }
 
-  get(orderId) {
+  async get(orderId) {
     return this.store.findById('orders', orderId);
   }
 
-  listByMember(memberId, status) {
-    let list = this.store.find('orders', o => o.memberId === memberId);
+  async listByMember(memberId, status) {
+    let list = await this.store.find('orders', o => o.memberId === memberId);
     if (status) list = list.filter(o => o.status === status);
     return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
-  listByTenant(tenantId, opts = {}) {
-    let list = this.store.find('orders', o => o.tenantId === tenantId);
+  async listByTenant(tenantId, opts = {}) {
+    let list = await this.store.find('orders', o => o.tenantId === tenantId);
     if (opts.status === 'refunding') {
       list = list.filter(o => o.refund && o.refund.status === 'refunding');
     } else if (opts.status) {
@@ -451,19 +513,47 @@ class OrderManager {
   }
 
   /** 定时清理：超时未支付自动取消；配送中超时自动完成 */
-  _housekeeping() {
+  async _housekeeping() {
     const now = Date.now();
-    for (const order of this.store.find('orders', () => true)) {
+    for (const order of await this.store.find('orders', () => true)) {
       if (order.status === 'pending' && new Date(order.expiresAt).getTime() < now) {
-        try { this.cancel(order.id, null, '超时未支付自动取消'); } catch (e) {}
+        try { await this.cancel(order.id, null, '超时未支付自动取消'); } catch (e) {}
       }
       if (order.status === 'delivering' && order.deliveredAt) {
         const autoDays = this.config.autoCompleteDays || 3;
         if (now - new Date(order.deliveredAt).getTime() > autoDays * 86400000) {
-          this.store.update('orders', order.id, { status: 'completed', completedAt: new Date().toISOString() });
+          await this.store.update('orders', order.id, { status: 'completed', completedAt: new Date().toISOString() });
+        }
+      }
+      if (order.status === 'paid' && order.deliveryType === 'pickup' && order.paidAt && !order.pickupReminderSentAt) {
+        const reminderAfter = Math.max(1, Number(this.config.pickupReminderHours) || 12) * 3600000;
+        if (now - new Date(order.paidAt).getTime() >= reminderAfter) {
+          const updated = await this.store.update('orders', order.id, { pickupReminderSentAt: new Date().toISOString() });
+          if (this.notifications) {
+            await this.notifications.notifyOrder(updated, 'pickupReminder', {
+              status: '等待取货',
+              time: new Date().toISOString(),
+              pickupLocation: order.pickupLocation ? order.pickupLocation.name : ''
+            });
+          }
         }
       }
     }
+  }
+
+  async _audit(order, actorType, action, actorId, detail) {
+    if (!this.auditLog || !order) return;
+    try {
+      await this.auditLog.record({
+        tenantId: order.tenantId,
+        actorType,
+        actorId: actorId || '',
+        action,
+        resource: 'order',
+        resourceId: order.id,
+        detail
+      });
+    } catch (error) { /* 审计失败不阻断交易主链路 */ }
   }
 
   shutdown() {

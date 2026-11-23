@@ -18,11 +18,12 @@ class GroupBuyManager {
 
   initialize() {
     if (this.config.autoCloseEnabled === false) return;
-    this.timer = setInterval(() => this._autoCloseExpired(), 60000);
+    this.timer = setInterval(() => this._autoCloseExpired().catch(error => console.error('[GroupBuy] 自动结束失败:', error.message)), 60000);
+    if (this.timer.unref) this.timer.unref();
   }
 
-  create(tenantId, data) {
-    const product = this.products.get(data.productId);
+  async create(tenantId, data) {
+    const product = await this.products.get(data.productId);
     if (!product || product.tenantId !== tenantId) throw business('商品不存在');
     const groupPrice = Math.round(Number(data.groupPrice) * 100);
     if (!(groupPrice > 0)) throw business('团购价必须大于0');
@@ -47,37 +48,62 @@ class GroupBuyManager {
       endAt: endAt.toISOString(),
       createdAt: now.toISOString()
     };
-    this.store.insert('groupBuys', gb);
+    await this.store.insert('groupBuys', gb);
     return gb;
   }
 
-  list(tenantId, status) {
-    let list = this.store.find('groupBuys', g => g.tenantId === tenantId);
+  async list(tenantId, status) {
+    let list = await this.store.find('groupBuys', g => g.tenantId === tenantId);
     if (status) list = list.filter(g => g.status === status);
-    return list
-      .map(g => this._decorate(g))
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const decorated = await Promise.all(list.map(g => this._decorate(g)));
+    return decorated.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
-  get(id) {
-    const gb = this.store.findById('groupBuys', id);
+  async get(id) {
+    const gb = await this.store.findById('groupBuys', id);
     return gb ? this._decorate(gb) : null;
   }
 
+  async update(id, tenantId, data = {}) {
+    const gb = await this.store.findById('groupBuys', id);
+    if (!gb || gb.tenantId !== tenantId) throw business('团购活动不存在');
+    if (['cancelled', 'closed'].includes(gb.status)) throw business('已结束的团购不能修改');
+    const patch = {};
+    if (data.title !== undefined) patch.title = String(data.title).trim().slice(0, 50);
+    if (data.endAt !== undefined) {
+      const endAt = new Date(data.endAt);
+      if (isNaN(endAt.getTime()) || endAt.getTime() <= Date.now()) throw business('新的截止时间必须晚于当前时间');
+      patch.endAt = endAt.toISOString();
+    }
+    if (data.extendHours !== undefined) {
+      const base = Math.max(Date.now(), new Date(gb.endAt).getTime());
+      patch.endAt = new Date(base + Math.max(1, Number(data.extendHours)) * 3600000).toISOString();
+    }
+    if (data.maxParticipants !== undefined) {
+      const max = Math.max(2, Math.trunc(Number(data.maxParticipants) || 0));
+      if (max < gb.participants.length || max < Number(gb.minParticipants || 2)) throw business('人数上限不能小于当前参团人数或成团人数');
+      patch.maxParticipants = max;
+    }
+    if (!Object.keys(patch).length) throw business('没有需要修改的团购信息');
+    patch.updatedByAction = 'admin-update';
+    return this._decorate(await this.store.update('groupBuys', id, patch));
+  }
+
   /** 判断某会员是否为有效参团者 */
-  hasParticipant(groupBuyId, memberId) {
-    const gb = this.store.findById('groupBuys', groupBuyId);
+  async hasParticipant(groupBuyId, memberId) {
+    const gb = await this.store.findById('groupBuys', groupBuyId);
     if (!gb) return false;
     return gb.participants.some(p => p.memberId === memberId);
   }
 
   /** 参团：active 或 success 状态下、截止前均可加入 */
-  join(groupBuyId, memberId) {
-    const gb = this.store.findById('groupBuys', groupBuyId);
+  async join(groupBuyId, memberId) {
+    return this.store.transaction(async () => {
+    const gb = await this.store.findByIdForUpdate('groupBuys', groupBuyId);
     if (!gb) throw business('团购活动不存在');
     if (gb.status === 'cancelled' || gb.status === 'closed') throw business('活动已结束');
     if (new Date(gb.endAt).getTime() < Date.now()) {
-      this.store.update('groupBuys', groupBuyId, { status: 'closed' });
+      await this.store.update('groupBuys', groupBuyId, { status: 'closed' });
       throw business('活动已截止');
     }
     if (gb.participants.some(p => p.memberId === memberId)) {
@@ -96,27 +122,28 @@ class GroupBuyManager {
       patch.status = 'success';
       patch.successAt = gb.successAt || new Date().toISOString();
     }
-    return this._decorate(this.store.update('groupBuys', groupBuyId, patch));
+    return this._decorate(await this.store.update('groupBuys', groupBuyId, patch));
+    });
   }
 
-  cancel(id) {
-    const gb = this.store.findById('groupBuys', id);
+  async cancel(id) {
+    const gb = await this.store.findById('groupBuys', id);
     if (!gb) throw business('团购活动不存在');
     if (gb.status === 'cancelled') return gb;
     return this.store.update('groupBuys', id, { status: 'cancelled' });
   }
 
-  _autoCloseExpired() {
+  async _autoCloseExpired() {
     const now = Date.now();
-    for (const gb of this.store.find('groupBuys', () => true)) {
+    for (const gb of await this.store.find('groupBuys', () => true)) {
       if (gb.status === 'active' && new Date(gb.endAt).getTime() < now) {
-        this.store.update('groupBuys', gb.id, { status: 'closed' });
+        await this.store.update('groupBuys', gb.id, { status: 'closed' });
       }
     }
   }
 
-  _decorate(gb) {
-    const p = this.products.get(gb.productId);
+  async _decorate(gb) {
+    const p = await this.products.get(gb.productId);
     return {
       ...gb,
       product: p ? { id: p.id, name: p.name, image: p.image, unit: p.unit, price: p.price } : null,

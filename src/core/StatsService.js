@@ -9,9 +9,16 @@ const { cnDate } = require('./time');
 class StatsService {
   constructor(store) { this.store = store; }
 
-  dashboard(tenantId) {
-    const orders = this.store.find('orders', o => o.tenantId === tenantId);
-    const members = this.store.find('members', m => m.tenantId === tenantId);
+  async dashboard(tenantId) {
+    const [orders, members, activeGroups, successGroups, formCount, submissionCount, appointmentCount] = await Promise.all([
+      this.store.find('orders', o => o.tenantId === tenantId),
+      this.store.find('members', m => m.tenantId === tenantId),
+      this.store.count('groupBuys', g => g.tenantId === tenantId && g.status === 'active'),
+      this.store.count('groupBuys', g => g.tenantId === tenantId && g.status === 'success'),
+      this.store.count('forms', f => f.tenantId === tenantId),
+      this.store.count('formSubmissions', s => s.tenantId === tenantId),
+      this.store.count('appointments', a => a.tenantId === tenantId && a.date === this._today() && a.status === 'booked')
+    ]);
     const today = cnDate();
 
     const paidOrders = orders.filter(o => ['paid', 'delivering', 'completed'].includes(o.status));
@@ -50,18 +57,20 @@ class StatsService {
       topProducts,
       trend,
       groupBuys: {
-        active: this.store.count('groupBuys', g => g.tenantId === tenantId && g.status === 'active'),
-        success: this.store.count('groupBuys', g => g.tenantId === tenantId && g.status === 'success')
+        active: activeGroups,
+        success: successGroups
       },
       forms: {
-        total: this.store.count('forms', f => f.tenantId === tenantId),
-        submissions: this.store.count('formSubmissions', s => s.tenantId === tenantId)
+        total: formCount,
+        submissions: submissionCount
       },
       appointments: {
-        today: this.store.count('appointments', a => a.tenantId === tenantId && a.date === today && a.status === 'booked')
+        today: appointmentCount
       }
     };
   }
+
+  _today() { return cnDate(); }
 }
 
 module.exports = StatsService;

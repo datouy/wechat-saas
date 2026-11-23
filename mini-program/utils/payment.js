@@ -1,10 +1,30 @@
 var api = require('./api');
 
 function requestSubscriptions(events) {
-  var ids = (events || []).map(function(event) { return event.templateId; }).filter(Boolean);
-  if (!ids.length || !wx.requestSubscribeMessage) return Promise.resolve({});
+  var configured = (events || []).filter(function(event) { return event && event.templateId; });
+  var ids = configured.map(function(event) { return event.templateId; });
+  if (!ids.length || !wx.requestSubscribeMessage) return Promise.resolve({ decisions: {}, accepted: 0 });
   return new Promise(function(resolve) {
-    wx.requestSubscribeMessage({ tmplIds: ids, success: resolve, fail: resolve });
+    wx.requestSubscribeMessage({
+      tmplIds: ids,
+      success: resolve,
+      fail: function(result) { resolve({ errMsg: result && result.errMsg || '订阅授权未完成' }); }
+    });
+  }).then(function(result) {
+    var decisions = {};
+    ids.forEach(function(id) {
+      var decision = result && result[id];
+      if (['accept', 'reject', 'ban', 'filter'].indexOf(decision) >= 0) decisions[id] = decision;
+    });
+    var outcome = {
+      decisions: decisions,
+      accepted: Object.keys(decisions).filter(function(id) { return decisions[id] === 'accept'; }).length,
+      error: result && result.errMsg || ''
+    };
+    if (!Object.keys(decisions).length) return outcome;
+    return api.request('/api/wx/subscriptions/authorize', 'POST', { decisions: decisions })
+      .then(function(record) { return Object.assign(outcome, { record: record }); })
+      .catch(function(error) { return Object.assign(outcome, { error: error.message }); });
   });
 }
 

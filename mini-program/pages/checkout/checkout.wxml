@@ -12,6 +12,16 @@
         </view>
       </view>
     </view>
+
+    <view wx:if="{{deliveryType==='pickup'}}">
+      <view class="choice {{pickupLocationId===item.id?'on':''}}" wx:for="{{locations}}" wx:key="id" bindtap="choosePickupLocation" data-id="{{item.id}}">
+        <view>
+          <view>{{item.name}}</view>
+          <view class="muted">{{item.address}} · {{item.hours}}</view>
+        </view>
+      </view>
+      <view wx:if="{{!locations.length}}" class="muted">当前门店暂未配置自提点</view>
+    </view>
   </view>
 
   <view class="card">

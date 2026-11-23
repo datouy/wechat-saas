@@ -4,7 +4,7 @@
 .gb-item { padding:24rpx; background:#fff; border:1rpx solid #e8e8e3; border-radius:16rpx; margin-bottom:12rpx; }
 .gb-head { display:flex; justify-content:space-between; gap:20rpx; font-weight:600; }
 .progress { height:6rpx; margin:18rpx 0 10rpx; overflow:hidden; background:#edede8; border-radius:99rpx; }
-.progress-value { height:100%; background:#1f6f4a; border-radius:99rpx; }
+.progress-value { height:100%; background:#b84a35; border-radius:99rpx; }
 .product-card { padding-top:4rpx; padding-bottom:4rpx; }
 .product-name { font-weight:600; }
 .product-unit { margin:6rpx 0 12rpx; }

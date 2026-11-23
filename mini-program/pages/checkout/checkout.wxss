@@ -5,13 +5,13 @@
 .product-row { margin-top:22rpx; padding:0; }
 .segments { display:flex; gap:8rpx; margin:12rpx 0 8rpx; padding:6rpx; background:#f1f1ed; border-radius:12rpx; }
 .segment { flex:1; padding:12rpx; text-align:center; border-radius:9rpx; color:#666660; }
-.segment.on { background:#fff; color:#20201e; font-weight:600; box-shadow:0 1rpx 4rpx rgba(0,0,0,.06); }
+.segment.on { background:#fff; color:#9b3c2b; font-weight:600; box-shadow:0 1rpx 4rpx rgba(0,0,0,.06); }
 .address-button { margin-top:14rpx; }
 .address-form { display:flex; flex-direction:column; gap:12rpx; margin-top:16rpx; }
 .section-row { padding-bottom:14rpx; font-weight:600; }
-.link { color:#1f6f4a; font-size:24rpx; }
+.link { color:#9b3c2b; font-size:24rpx; }
 .coupon { display:flex; justify-content:space-between; gap:20rpx; padding:18rpx; margin-top:10rpx; border:1rpx solid #e6e6e1; border-radius:12rpx; }
-.coupon.on { border-color:#1f6f4a; background:#f5faf7; }
+.coupon.on { border-color:#b84a35; background:#fcf5f1; }
 .claim-list { margin-top:16rpx; padding-top:8rpx; border-top:1rpx solid #efefeb; }
 .claim { display:flex; align-items:center; justify-content:space-between; gap:20rpx; padding:14rpx 0; }
 .mini { min-width:118rpx; margin:0; padding:0 20rpx; height:60rpx; line-height:60rpx; font-size:24rpx; }

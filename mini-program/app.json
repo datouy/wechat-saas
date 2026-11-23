@@ -10,13 +10,13 @@
   ],
   "window": {
     "navigationBarTitleText": "邻里团",
-    "navigationBarBackgroundColor": "#f7f7f4",
+    "navigationBarBackgroundColor": "#f7f4ef",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#f7f7f4"
+    "backgroundColor": "#f7f4ef"
   },
   "tabBar": {
     "color": "#6b7280",
-    "selectedColor": "#1f1f1d",
+    "selectedColor": "#b84a35",
     "backgroundColor": "#ffffff",
     "list": [
       {

@@ -7,7 +7,7 @@
 .group-name { font-weight:600; }
 .group-price { margin-top:8rpx; font-size:38rpx; }
 .progress { height:6rpx; margin:20rpx 0 8rpx; overflow:hidden; background:#edede8; border-radius:99rpx; }
-.progress-value { height:100%; background:#1f6f4a; border-radius:99rpx; }
+.progress-value { height:100%; background:#b84a35; border-radius:99rpx; }
 .group-progress-row { padding-bottom:0; }
 .action { margin-top:20rpx; }
 .action[disabled] { background:#d8d8d3 !important; color:#6f6f69 !important; }

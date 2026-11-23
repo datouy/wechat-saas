@@ -5,13 +5,13 @@ Page({
   load() {
     var that = this;
     api.request('/api/wx/forms').then(function(list) { that.setData({ forms: list }); })
-      .catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+      .catch(function(e) { api.showError(e, '表单加载失败'); });
   },
   openForm(e) {
     var that = this, id = e.currentTarget.dataset.id;
     api.request('/api/wx/forms/' + id).then(function(f) {
       that.setData({ current: f, answers: {} });
-    }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    }).catch(function(e) { api.showError(e, '表单加载失败'); });
   },
   back() { this.setData({ current: null }); },
   onAnswer(e) { this.data.answers[e.currentTarget.dataset.fid] = e.detail.value; },
@@ -34,6 +34,6 @@ Page({
       wx.showToast({ title: '提交成功' });
       that.setData({ current: null });
       that.load();
-    }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    }).catch(function(e) { api.showError(e, '提交失败'); });
   }
 });

@@ -11,6 +11,8 @@ Page({
     deliveryType: 'delivery',
     addresses: [],
     addressId: '',
+    locations: [],
+    pickupLocationId: '',
     coupons: [],
     couponId: '',
     couponTemplates: [],
@@ -45,7 +47,8 @@ Page({
       api.request('/api/wx/member/' + mid + '/points'),
       api.request('/api/wx/member/' + mid + '/coupons?status=unused'),
       api.request('/api/wx/coupons/templates'),
-      api.request('/api/wx/checkout')
+      api.request('/api/wx/checkout'),
+      api.request('/api/wx/locations')
     ];
     if (this.groupBuyId) requests.push(api.request('/api/wx/groupbuys/' + this.groupBuyId));
 
@@ -53,6 +56,8 @@ Page({
       var member = r[1];
       var addresses = member.addresses || [];
       var defaultAddress = addresses.find(function(a) { return a.isDefault; }) || addresses[0];
+      var locations = (r[6] || []).filter(function(item) { return item.pickupEnabled; });
+      var primaryLocation = locations.find(function(item) { return item.isPrimary; }) || locations[0];
       that.policy = r[5];
       var coupons = r[3].map(function(c) {
         return Object.assign({}, c, { thresholdText: (c.threshold / 100).toFixed(2), amountText: (c.amount / 100).toFixed(2) });
@@ -61,10 +66,12 @@ Page({
         return Object.assign({}, c, { thresholdCent: cents(c.threshold * 100), amountCent: cents(c.amount * 100) });
       });
       that.setData({
-        product: r[0],
-        groupBuy: r[6] || null,
+        product: Object.assign({}, r[0], { image: api.assetUrl(r[0].image) }),
+        groupBuy: r[7] || null,
         addresses: addresses,
         addressId: defaultAddress ? defaultAddress.id : '',
+        locations: locations,
+        pickupLocationId: primaryLocation ? primaryLocation.id : '',
         coupons: coupons,
         couponTemplates: templates,
         pointsBalance: r[2].balance,
@@ -73,7 +80,7 @@ Page({
       that.recalc();
     }).catch(function(e) {
       that.setData({ loading: false });
-      wx.showToast({ title: e.message, icon: 'none' });
+      api.showError(e, '结算信息加载失败');
     });
   },
 
@@ -125,6 +132,10 @@ Page({
     this.setData({ addressId: e.currentTarget.dataset.id });
   },
 
+  choosePickupLocation(e) {
+    this.setData({ pickupLocationId: e.currentTarget.dataset.id });
+  },
+
   toggleAddressForm() {
     this.setData({ showAddressForm: !this.data.showAddressForm });
   },
@@ -148,7 +159,7 @@ Page({
         addressId: address.id
       });
       that.load();
-    }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    }).catch(function(e) { api.showError(e, '地址保存失败'); });
   },
 
   chooseCoupon(e) {
@@ -171,7 +182,7 @@ Page({
     api.request('/api/wx/coupons/claim', 'POST', { templateId: e.currentTarget.dataset.id }).then(function() {
       wx.showToast({ title: '已领取' });
       that.load();
-    }).catch(function(err) { wx.showToast({ title: err.message, icon: 'none' }); });
+    }).catch(function(err) { api.showError(err, '优惠券领取失败'); });
   },
 
   onPoints(e) {
@@ -186,6 +197,9 @@ Page({
     if (this.data.submitting || !this.data.product) return;
     if (this.data.deliveryType === 'delivery' && !this.data.addressId) {
       return wx.showToast({ title: '请选择收货地址', icon: 'none' });
+    }
+    if (this.data.deliveryType === 'pickup' && !this.data.pickupLocationId) {
+      return wx.showToast({ title: '请选择自提门店', icon: 'none' });
     }
     if (this.groupBuyId) {
       var gb = this.data.groupBuy;
@@ -202,6 +216,7 @@ Page({
       };
       if (that.data.couponId) options.couponId = that.data.couponId;
       if (that.data.deliveryType === 'delivery') options.addressId = that.data.addressId;
+      if (that.data.deliveryType === 'pickup') options.pickupLocationId = that.data.pickupLocationId;
       if (that.groupBuyId) options.groupBuyId = that.groupBuyId;
       return api.request('/api/wx/orders', 'POST', {
         items: [{ productId: that.productId, quantity: that.data.qty }],
@@ -220,7 +235,7 @@ Page({
         });
       });
     }).catch(function(e) {
-      wx.showToast({ title: e.message, icon: 'none' });
+      api.showError(e, '订单提交失败');
     }).then(function() {
       that.setData({ submitting: false });
     });

@@ -12,7 +12,7 @@
   <aside class="sidebar" id="sidebar" aria-label="工作台导航">
     <a class="brand" href="#/today" aria-label="邻里团工作台">
       <span class="brand-mark" aria-hidden="true">邻</span>
-      <span class="brand-name">邻里团</span>
+      <span class="brand-name" id="sidebarStoreName">邻里团</span>
     </a>
     <nav class="primary-nav">
       <a class="nav-link" data-nav="today" href="#/today">今天</a>
@@ -27,6 +27,12 @@
         <a data-nav="coupons" href="#/coupons">优惠券</a>
         <a data-nav="surveys" href="#/surveys">问卷</a>
         <a data-nav="appointments" href="#/appointments">预约</a>
+        <a data-nav="after-sales" href="#/after-sales">售后</a>
+        <a data-nav="growth" href="#/growth" data-roles="owner,manager">会员增长</a>
+        <a data-nav="reports" href="#/reports" data-roles="owner,manager">经营报表</a>
+        <a data-nav="operations" href="#/operations" data-roles="owner,manager">运营保障</a>
+        <a data-nav="audit" href="#/audit" data-roles="owner,manager">审计日志</a>
+        <a data-nav="reconciliation" href="#/reconciliation" data-roles="owner,manager">交易对账</a>
         <a data-nav="settings" href="#/settings">设置</a>
       </div>
     </details>
@@ -48,11 +54,16 @@
 
 <div class="login-overlay hidden" id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
   <form class="login-card" id="loginForm">
-    <h2 id="loginTitle">登录邻里团</h2>
+    <div class="login-card-head">
+      <span class="login-mark" aria-hidden="true">邻</span>
+      <div><span>社区团购经营台</span><h2 id="loginTitle">登录邻里团</h2></div>
+    </div>
+    <p class="login-copy">从客户下单、成团进度到会员复购，在一个工作台里处理今天的经营事项。</p>
     <label class="field-label" for="loginUser">用户名</label>
     <input id="loginUser" name="username" autocomplete="username" value="admin">
     <label class="field-label" for="loginPass">密码</label>
     <input id="loginPass" name="password" type="password" autocomplete="current-password">
+    <div class="login-demo-row"><span>本地体验账号 admin / admin123</span><button class="demo-fill" type="button" data-action="fill-demo">填入体验账号</button></div>
     <p class="form-error" id="loginError" aria-live="polite"></p>
     <button class="button primary full" type="submit">登录</button>
   </form>

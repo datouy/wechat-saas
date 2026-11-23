@@ -8,7 +8,9 @@ Page({
     api.request('/api/wx/home').then(function(d) {
       that.setData({
         tenantName: d.tenant.name,
-        products: d.products,
+        products: d.products.map(function(product) {
+          return Object.assign({}, product, { image: api.assetUrl(product.image) });
+        }),
         groupBuys: d.groupBuys.map(function(g) {
           return Object.assign({}, g, {
             groupPriceYuan: (g.groupPrice / 100).toFixed(2),
@@ -19,7 +21,7 @@ Page({
       });
     }).catch(function(e) {
       that.setData({ loading: false });
-      wx.showToast({ title: e.message, icon: 'none' });
+      api.showError(e, '首页加载失败');
     });
   },
   goProduct(e) { wx.navigateTo({ url: '/pages/product/product?id=' + e.currentTarget.dataset.id }); },

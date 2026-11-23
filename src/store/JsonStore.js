@@ -6,6 +6,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const AsyncMutex = require('./AsyncMutex');
 
 class JsonStore {
   constructor(dataDir) {
@@ -13,15 +14,18 @@ class JsonStore {
     this.collections = new Map();
     this.dirty = new Set();
     this.saveTimer = null;
+    this.mutex = new AsyncMutex();
     if (!fs.existsSync(this.dataDir)) fs.mkdirSync(this.dataDir, { recursive: true });
   }
 
-  initialize() {
-    for (const name of this._listFiles()) {
-      this.load(name);
-    }
-    console.log('[JsonStore] 数据目录: ' + this.dataDir);
-    console.log('[JsonStore] 已加载集合: ' + [...this.collections.keys()].join(', ') || '(空)');
+  async initialize() {
+    await this.mutex.run(() => {
+      for (const name of this._listFiles()) {
+        this._load(name);
+      }
+      console.log('[JsonStore] 数据目录: ' + this.dataDir);
+      console.log('[JsonStore] 已加载集合: ' + ([...this.collections.keys()].join(', ') || '(空)'));
+    });
   }
 
   _listFiles() {
@@ -32,7 +36,11 @@ class JsonStore {
     } catch (e) { return []; }
   }
 
-  load(name) {
+  async load(name) {
+    return this.mutex.run(() => this._load(name));
+  }
+
+  _load(name) {
     const file = path.join(this.dataDir, name + '.json');
     if (!fs.existsSync(file)) {
       this.collections.set(name, []);
@@ -56,60 +64,92 @@ class JsonStore {
     return parsed;
   }
 
-  collection(name) {
+  async collection(name) {
+    return this.mutex.run(() => this._collection(name));
+  }
+
+  _collection(name) {
     if (!this.collections.has(name)) this.collections.set(name, []);
     return this.collections.get(name);
   }
 
-  insert(name, doc) {
-    this.collection(name).push(doc);
-    this.markDirty(name);
-    return doc;
+  async insert(name, doc) {
+    return this.mutex.run(() => {
+      this._collection(name).push(doc);
+      this.markDirty(name);
+      return doc;
+    });
   }
 
-  findById(name, id) {
-    return this.collection(name).find(d => d.id === id) || null;
+  async findById(name, id) {
+    return this.mutex.run(() => this._collection(name).find(d => d.id === id) || null);
   }
 
-  update(name, id, patch) {
-    const doc = this.findById(name, id);
-    if (!doc) return null;
-    Object.assign(doc, patch, { updatedAt: new Date().toISOString() });
-    this.markDirty(name);
-    return doc;
+  async findByIdForUpdate(name, id) {
+    return this.mutex.run(() => this._collection(name).find(d => d.id === id) || null);
   }
 
-  remove(name, id) {
-    const arr = this.collection(name);
-    const idx = arr.findIndex(d => d.id === id);
-    if (idx === -1) return false;
-    arr.splice(idx, 1);
-    this.markDirty(name);
-    return true;
+  async update(name, id, patch) {
+    return this.mutex.run(() => {
+      const doc = this._collection(name).find(d => d.id === id);
+      if (!doc) return null;
+      Object.assign(doc, patch, { updatedAt: new Date().toISOString() });
+      this.markDirty(name);
+      return doc;
+    });
   }
 
-  find(name, predicate) {
-    return this.collection(name).filter(predicate || (() => true));
+  async remove(name, id) {
+    return this.mutex.run(() => {
+      const arr = this._collection(name);
+      const idx = arr.findIndex(d => d.id === id);
+      if (idx === -1) return false;
+      arr.splice(idx, 1);
+      this.markDirty(name);
+      return true;
+    });
   }
 
-  count(name, predicate) {
-    return this.collection(name).filter(predicate || (() => true)).length;
+  async find(name, predicate) {
+    return this.mutex.run(() => this._collection(name).filter(predicate || (() => true)));
   }
 
-  /** 跨集合事务：JSON 为单进程内存模型，此处直通执行（错误回滚由业务层 try/catch 保证） */
-  transaction(fn) {
-    return fn();
+  async count(name, predicate) {
+    return this.mutex.run(() => this._collection(name).filter(predicate || (() => true)).length);
+  }
+
+  /** JSON 后端使用内存快照回滚，保证单进程开发/测试环境下的事务语义。 */
+  async transaction(fn) {
+    return this.mutex.run(async () => {
+      const snapshot = new Map();
+      for (const [name, docs] of this.collections) snapshot.set(name, docs.map(doc => JSON.parse(JSON.stringify(doc))));
+      const dirty = new Set(this.dirty);
+      try {
+        return await fn();
+      } catch (error) {
+        this.collections = snapshot;
+        this.dirty = dirty;
+        throw error;
+      }
+    });
+  }
+
+  async lock() {
+    if (!this.mutex.inTransaction()) throw new Error('[JsonStore] lock 必须在事务中调用');
   }
 
   /** 原子条件扣减：仅当 field 当前值 >= qty 时扣减，返回是否成功（防超卖） */
-  atomicDec(name, id, field, qty) {
-    const doc = this.findById(name, id);
-    if (!doc) return false;
-    const cur = Number(doc[field]) || 0;
-    if (cur < qty) return false;
-    doc[field] = cur - qty;
-    this.markDirty(name);
-    return true;
+  async atomicDec(name, id, field, qty) {
+    return this.mutex.run(() => {
+      const doc = this._collection(name).find(d => d.id === id);
+      if (!doc) return false;
+      const cur = Number(doc[field]) || 0;
+      if (cur < Number(qty)) return false;
+      doc[field] = cur - Number(qty);
+      doc.updatedAt = new Date().toISOString();
+      this.markDirty(name);
+      return true;
+    });
   }
 
   markDirty(name) {
@@ -125,7 +165,7 @@ class JsonStore {
   _write(name) {
     const file = path.join(this.dataDir, name + '.json');
     const tmp = file + '.tmp';
-    const data = JSON.stringify(this.collection(name), null, 1);
+    const data = JSON.stringify(this._collection(name), null, 1);
     const fd = fs.openSync(tmp, 'w');
     try {
       fs.writeSync(fd, data, null, 'utf8');
@@ -137,7 +177,7 @@ class JsonStore {
   }
 
   /** 立即落盘；返回失败的集合列表（不再丢失脏标记） */
-  flush() {
+  async flush() {
     const failed = [];
     for (const name of [...this.dirty]) {
       try {
@@ -151,14 +191,39 @@ class JsonStore {
     return failed;
   }
 
-  shutdown() {
+  async ping() {
+    return true;
+  }
+
+  async exportCollections() {
+    return this.mutex.run(() => {
+      const out = {};
+      for (const [name, docs] of this.collections) out[name] = docs.map(doc => JSON.parse(JSON.stringify(doc)));
+      return out;
+    });
+  }
+
+  async importCollections(collections) {
+    await this.mutex.run(() => {
+      this.collections = new Map();
+      for (const [name, docs] of Object.entries(collections || {})) {
+        this.collections.set(name, docs.map(doc => JSON.parse(JSON.stringify(doc))));
+        this.dirty.add(name);
+      }
+    });
+    await this.flush();
+  }
+
+  async shutdown() {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    const failed = this.flush();
+    const failed = await this.flush();
     if (failed.length) {
       console.error('[JsonStore] 关闭时仍有集合未持久化: ' + failed.join(', '));
     }
   }
+
+  get kind() { return 'json'; }
 }
 
 module.exports = JsonStore;

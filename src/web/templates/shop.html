@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>邻里团 · 顾客体验</title>
+<link rel="stylesheet" href="/static/shop.css">
+</head>
+<body>
+<header class="shop-header">
+  <div class="header-inner">
+    <a class="shop-brand" href="/shop">
+      <span class="brand-mark" id="brandMark">邻</span>
+      <span id="storeName">邻里团</span>
+    </a>
+    <div class="header-actions">
+      <span class="demo-chip">顾客体验</span>
+      <a class="service-link" id="customerServiceLink" href="#/" hidden>联系门店</a>
+      <a class="back-link" href="/">进入经营台</a>
+    </div>
+  </div>
+</header>
+
+<main class="shop-main" id="shopMain">
+  <section class="hero">
+    <div class="hero-copy">
+      <span class="eyebrow">社区团购</span>
+      <h1 id="heroTitle">今天也把好物，<br>送到邻里身边。</h1>
+      <p id="heroDescription">正在载入门店...</p>
+      <div class="hero-actions">
+        <a class="button primary" href="#products">开始选购</a>
+        <a class="button" href="#orders">查看我的订单</a>
+      </div>
+    </div>
+    <div class="hero-visual">
+      <div class="visual-card visual-card-main">
+        <span class="visual-icon">今日</span>
+        <strong id="heroGroupCount">2</strong>
+        <small>个邻里团正在进行</small>
+      </div>
+      <div class="visual-card visual-card-small">
+        <span>会员积分</span>
+        <strong id="heroPoints">--</strong>
+      </div>
+      <div class="visual-stamp">本地精选<br>社区自提</div>
+    </div>
+  </section>
+
+  <div class="announcement" id="announcement"></div>
+
+  <section class="member-strip" id="memberStrip">
+    <div>
+      <span class="eyebrow">会员中心</span>
+      <h2 id="memberGreeting">正在登录体验账号</h2>
+      <p id="memberMeta">体验团购、优惠券、积分抵扣与自提履约。</p>
+      <div class="account-actions">
+        <button type="button" class="text-action" id="openAddresses">收货地址</button>
+        <button type="button" class="text-action" id="openAfterSales">售后记录</button>
+      </div>
+    </div>
+    <div class="member-stats">
+      <div><strong id="memberPoints">--</strong><span>积分</span></div>
+      <div><strong id="memberOrders">--</strong><span>订单</span></div>
+      <div><strong id="memberCoupons">--</strong><span>优惠券</span></div>
+    </div>
+  </section>
+
+  <section class="section-block">
+    <div class="section-head">
+      <div><span class="eyebrow">正在成团</span><h2>邻里团正在进行</h2></div>
+      <span class="section-note">成团后按团购价结算</span>
+    </div>
+    <div class="group-grid" id="groupGrid"></div>
+  </section>
+
+  <section class="section-block" id="products">
+    <div class="section-head">
+      <div><span class="eyebrow">今日精选</span><h2>今天值得带回家</h2></div>
+      <div class="category-tabs" id="categoryTabs"></div>
+    </div>
+    <div class="product-grid" id="productGrid"></div>
+  </section>
+
+  <section class="section-block" id="orders">
+    <div class="section-head">
+      <div><span class="eyebrow">我的订单</span><h2>最近订单</h2></div>
+      <span class="section-note" id="orderHint">支付后可回到经营台处理履约</span>
+    </div>
+    <div class="order-list" id="orderList"></div>
+  </section>
+
+  <section class="closing-note">
+    <span>10 分钟体验路线</span>
+    <strong>选购并支付 → 回到经营台处理待办 → 打开客户档案查看会员资产</strong>
+  </section>
+</main>
+
+<dialog class="purchase-dialog" id="purchaseDialog">
+  <button class="dialog-close" type="button" id="closePurchase" aria-label="关闭">×</button>
+  <div class="purchase-layout">
+    <div class="purchase-image" id="purchaseImage"></div>
+    <div class="purchase-content">
+      <span class="eyebrow">确认订单</span>
+      <h2 id="purchaseTitle">确认购买</h2>
+      <p id="purchaseDescription"></p>
+      <div class="purchase-price" id="purchasePrice">¥0.00</div>
+      <div class="quantity-row">
+        <span>数量</span>
+        <div class="stepper"><button type="button" id="qtyMinus">−</button><strong id="qtyValue">1</strong><button type="button" id="qtyPlus">＋</button></div>
+      </div>
+      <div class="delivery-switch">
+        <button type="button" class="active" data-delivery="delivery">送到家</button>
+        <button type="button" data-delivery="pickup">到店自提</button>
+      </div>
+      <div class="checkout-choice" id="deliveryAddressChoice"><span>收货地址</span><select id="addressSelect"></select><button type="button" data-shop-action="address-new">新增地址</button></div>
+      <div class="checkout-choice" id="pickupLocationChoice" hidden><span>自提门店</span><select id="pickupLocationSelect"></select></div>
+      <label class="points-choice"><input type="checkbox" id="usePoints"> 使用积分抵扣（当前 <strong id="availablePoints">0</strong> 积分，<span id="pointsDiscountHint">本单可抵 ¥0.00</span>）</label>
+      <label class="coupon-choice">优惠券<select id="couponSelect"><option value="">暂不使用</option></select></label>
+      <div class="checkout-summary" aria-live="polite">
+        <div class="checkout-line"><span>商品金额</span><strong id="summaryGoods">¥0.00</strong></div>
+        <div class="checkout-line" id="summaryCouponRow" hidden><span>优惠券</span><strong id="summaryCoupon">-¥0.00</strong></div>
+        <div class="checkout-line" id="summaryPointsRow" hidden><span>积分抵扣</span><strong id="summaryPoints">-¥0.00</strong></div>
+        <div class="checkout-line"><span>配送费</span><strong id="summaryDelivery">¥0.00</strong></div>
+        <div class="checkout-total"><span>应付</span><strong id="summaryTotal">¥0.00</strong></div>
+      </div>
+      <p class="delivery-note" id="deliveryNote"></p>
+      <button type="button" class="button primary full" id="submitOrder">确认下单并模拟支付</button>
+      <p class="purchase-error" id="purchaseError" aria-live="polite"></p>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="shop-dialog" id="shopDialog" aria-labelledby="shopDialogTitle">
+  <div class="shop-dialog-head"><span class="eyebrow">会员服务</span><h2 id="shopDialogTitle">账户</h2><button type="button" class="dialog-close static-close" id="closeShopDialog" aria-label="关闭">×</button></div>
+  <div class="shop-dialog-body" id="shopDialogBody"></div>
+  <div class="shop-dialog-footer" id="shopDialogFooter"></div>
+</dialog>
+
+<div class="shop-toast" id="shopToast" role="status" aria-live="polite"></div>
+<script src="/static/shop.js"></script>
+</body>
+</html>

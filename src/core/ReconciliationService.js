@@ -22,7 +22,7 @@ class ReconciliationService {
    * @param billCsv 可选，注入账单原文用于测试；缺省时调用 wechat.downloadTradeBill(date)
    * @returns {date, summary, matchedPayments, missingInLocal, missingInBill, amountMismatch, refundMismatch, balanced}
    */
-  async reconcile(date, billCsv) {
+  async reconcile(date, billCsv, tenantId) {
     const d = String(date || '');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw business('对账日期格式应为 YYYY-MM-DD');
     const csv = billCsv !== undefined ? billCsv : await this.wechat.downloadTradeBill(d);
@@ -35,7 +35,7 @@ class ReconciliationService {
     const missingInLocal = [];
     const amountMismatch = [];
     for (const p of payments) {
-      const local = this.store.find('orders', o => o.orderNo === p.orderNo)[0];
+      const local = (await this.store.find('orders', o => o.orderNo === p.orderNo && (!tenantId || o.tenantId === tenantId)))[0];
       if (!local) { missingInLocal.push({ orderNo: p.orderNo, amount: p.amount }); continue; }
       const localAmount = Math.round(Number(local.payAmount) || 0);
       if (localAmount !== p.amount) {
@@ -46,7 +46,7 @@ class ReconciliationService {
     }
 
     // 本地已支付订单中，支付日期与对账日一致但账单缺失的（可能账单延迟，也可能是漏单）
-    const paidLocal = this.store.find('orders', o => o.paidAt && o.paidAt.slice(0, 10) === d);
+    const paidLocal = await this.store.find('orders', o => o.paidAt && o.paidAt.slice(0, 10) === d && (!tenantId || o.tenantId === tenantId));
     const billOrderNos = new Set(payments.map(p => p.orderNo));
     const missingInBill = paidLocal
       .filter(o => !billOrderNos.has(o.orderNo))
@@ -59,7 +59,7 @@ class ReconciliationService {
     }
     const refundMismatch = [];
     for (const [orderNo, billRefund] of refundByOrder) {
-      const local = this.store.find('orders', o => o.orderNo === orderNo)[0];
+      const local = (await this.store.find('orders', o => o.orderNo === orderNo && (!tenantId || o.tenantId === tenantId)))[0];
       const localRefund = local ? Math.round(Number(local.refundedAmount) || 0) : 0;
       if (!local || localRefund !== billRefund) {
         refundMismatch.push({ orderNo, billRefund, localRefund, localExists: !!local });

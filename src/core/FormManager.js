@@ -10,7 +10,7 @@ const { business } = require('../errors');
 class FormManager {
   constructor(store) { this.store = store; }
 
-  create(tenantId, data) {
+  async create(tenantId, data) {
     const form = {
       id: uuidv4(),
       tenantId,
@@ -27,23 +27,44 @@ class FormManager {
       createdAt: new Date().toISOString()
     };
     if (!form.title) throw business('表单标题不能为空');
-    this.store.insert('forms', form);
+    await this.store.insert('forms', form);
     return form;
   }
 
-  list(tenantId) {
-    return this.store.find('forms', f => f.tenantId === tenantId)
+  async list(tenantId) {
+    return (await this.store.find('forms', f => f.tenantId === tenantId))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
 
-  get(id) { return this.store.findById('forms', id); }
+  async get(id) { return this.store.findById('forms', id); }
+
+  async update(id, data) {
+    const form = await this.get(id);
+    if (!form) throw business('表单不存在');
+    const patch = {};
+    if (data.title !== undefined) patch.title = String(data.title).slice(0, 50);
+    if (data.description !== undefined) patch.description = String(data.description).slice(0, 300);
+    if (data.status !== undefined) patch.status = data.status === 'closed' ? 'closed' : 'open';
+    if (data.fields !== undefined) {
+      patch.fields = data.fields.map((field, index) => ({
+        id: (form.fields[index] && form.fields[index].id) || 'f' + (index + 1),
+        label: String(field.label || '').slice(0, 50),
+        type: ['text', 'textarea', 'radio', 'checkbox', 'rating', 'number'].includes(field.type) ? field.type : 'text',
+        options: Array.isArray(field.options) ? field.options.slice(0, 20) : [],
+        required: !!field.required
+      }));
+    }
+    return this.store.update('forms', id, patch);
+  }
 
   /** 提交表单 */
-  submit(formId, memberId, answers) {
-    const form = this.get(formId);
+  async submit(formId, memberId, answers) {
+    return this.store.transaction(async () => {
+    await this.store.lock('form-submit:' + formId + ':' + memberId);
+    const form = await this.get(formId);
     if (!form) throw business('表单不存在');
     if (form.status !== 'open') throw business('表单已关闭');
-    if (this.store.find('formSubmissions', s => s.formId === formId && s.memberId === memberId).length > 0) {
+    if ((await this.store.find('formSubmissions', s => s.formId === formId && s.memberId === memberId)).length > 0) {
       throw business('您已提交过该表单');
     }
     // 必填校验
@@ -63,15 +84,16 @@ class FormManager {
       answers: valueMap,
       createdAt: new Date().toISOString()
     };
-    this.store.insert('formSubmissions', submission);
+    await this.store.insert('formSubmissions', submission);
     return submission;
+    });
   }
 
   /** 表单统计 */
-  stats(formId) {
-    const form = this.get(formId);
+  async stats(formId) {
+    const form = await this.get(formId);
     if (!form) throw business('表单不存在');
-    const subs = this.store.find('formSubmissions', s => s.formId === formId);
+    const subs = await this.store.find('formSubmissions', s => s.formId === formId);
     const result = { formId, title: form.title, total: subs.length, fields: [] };
     for (const f of form.fields) {
       const dist = {};

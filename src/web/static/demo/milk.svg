@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540">
+<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#dceef2"/><stop offset="1" stop-color="#a9cfdd"/></linearGradient><linearGradient id="p" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#e9f1f2"/></linearGradient></defs>
+<rect width="720" height="540" rx="40" fill="url(#b)"/><circle cx="602" cy="90" r="150" fill="#fff" opacity=".24"/><path d="M52 413c121-80 229-91 326-32 58 35 134 45 290 8v151H52Z" fill="#5d94a7" opacity=".16"/>
+<g transform="translate(219 30)"><path d="M85 0h141l23 88-21 39v283c0 26-17 42-43 42h-96c-27 0-44-17-44-42V126L24 88Z" fill="url(#p)"/><path d="M91 17h130l15 67H76Z" fill="#3b7e97"/><path d="M64 170h190v196H64Z" fill="#d8edf0"/><circle cx="159" cy="260" r="57" fill="#fff"/><path d="M127 271c20-34 47-34 65 0" fill="none" stroke="#3d7e97" stroke-width="8" stroke-linecap="round"/><text x="116" y="334" fill="#3d7e97" font-family="sans-serif" font-size="20" font-weight="700">每日鲜奶</text></g>
+<text x="44" y="494" fill="#285a6e" font-family="sans-serif" font-size="34" font-weight="700">巴氏鲜牛奶</text>
+</svg>

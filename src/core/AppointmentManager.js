@@ -15,7 +15,7 @@ class AppointmentManager {
   }
 
   /** 创建可预约服务 */
-  createService(tenantId, data) {
+  async createService(tenantId, data) {
     const svc = {
       id: uuidv4(),
       tenantId,
@@ -29,19 +29,36 @@ class AppointmentManager {
       createdAt: new Date().toISOString()
     };
     if (!svc.name) throw business('服务名称不能为空');
-    this.store.insert('appointmentServices', svc);
+    await this.store.insert('appointmentServices', svc);
     return svc;
   }
 
-  listServices(tenantId) {
+  async listServices(tenantId) {
     return this.store.find('appointmentServices', s => s.tenantId === tenantId);
   }
 
+  async getService(id) {
+    return await this.store.findById('appointmentServices', id) || null;
+  }
+
+  async updateService(id, data) {
+    const service = await this.getService(id);
+    if (!service) throw business('服务不存在');
+    const patch = {};
+    if (data.name !== undefined) patch.name = String(data.name).slice(0, 30);
+    if (data.price !== undefined) patch.price = Math.round(Number(data.price) * 100);
+    if (data.durationMinutes !== undefined) patch.durationMinutes = Math.max(1, Number(data.durationMinutes));
+    if (data.capacityPerSlot !== undefined) patch.capacityPerSlot = Math.max(1, Number(data.capacityPerSlot));
+    if (data.slots !== undefined) patch.slots = data.slots.slice(0, 30);
+    if (data.enabled !== undefined) patch.enabled = !!data.enabled;
+    return this.store.update('appointmentServices', id, patch);
+  }
+
   /** 查询某日某服务的可用时段（含余位） */
-  querySlots(serviceId, date) {
-    const svc = this.store.findById('appointmentServices', serviceId);
+  async querySlots(serviceId, date) {
+    const svc = await this.store.findById('appointmentServices', serviceId);
     if (!svc) throw business('服务不存在');
-    const booked = this.store.find('appointments',
+    const booked = await this.store.find('appointments',
       a => a.serviceId === serviceId && a.date === date && a.status === 'booked');
     return svc.slots.map(slot => {
       const used = booked.filter(b => b.slot === slot).length;
@@ -50,18 +67,20 @@ class AppointmentManager {
   }
 
   /** 预约 */
-  book(serviceId, memberId, date, slot, note) {
-    const svc = this.store.findById('appointmentServices', serviceId);
+  async book(serviceId, memberId, date, slot, note) {
+    return this.store.transaction(async () => {
+    await this.store.lock('appointment:' + serviceId + ':' + date + ':' + slot);
+    const svc = await this.store.findById('appointmentServices', serviceId);
     if (!svc || !svc.enabled) throw business('服务不可预约');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) throw business('日期格式需为 YYYY-MM-DD');
     if (!svc.slots.includes(slot)) throw business('时段无效');
     if (date < cnDate()) throw business('不能预约过去的日期');
 
-    const dup = this.store.find('appointments',
+    const dup = await this.store.find('appointments',
       a => a.serviceId === serviceId && a.memberId === memberId && a.date === date && a.slot === slot && a.status === 'booked');
     if (dup.length) throw business('您已预约该时段');
 
-    const slots = this.querySlots(serviceId, date);
+    const slots = await this.querySlots(serviceId, date);
     const target = slots.find(s => s.slot === slot);
     if (!target || target.available <= 0) throw business('该时段已约满');
 
@@ -77,24 +96,24 @@ class AppointmentManager {
       status: 'booked', // booked / completed / cancelled
       createdAt: new Date().toISOString()
     };
-    this.store.insert('appointments', appt);
+    await this.store.insert('appointments', appt);
     if (this.notifications) {
-      Promise.resolve(this.notifications.notifyAppointment(appt, 'appointmentBooked'))
-        .catch(() => {});
+      await this.notifications.notifyAppointment(appt, 'appointmentBooked');
     }
     return appt;
+    });
   }
 
-  cancel(appointmentId, memberId) {
-    const a = this.store.findById('appointments', appointmentId);
+  async cancel(appointmentId, memberId) {
+    const a = await this.store.findById('appointments', appointmentId);
     if (!a) throw business('预约不存在');
     if (memberId && a.memberId !== memberId) throw business('无权操作');
     if (a.status !== 'booked') throw business('预约已不可取消');
     return this.store.update('appointments', appointmentId, { status: 'cancelled', cancelledAt: new Date().toISOString() });
   }
 
-  complete(appointmentId, tenantId) {
-    const appointment = this.store.findById('appointments', appointmentId);
+  async complete(appointmentId, tenantId) {
+    const appointment = await this.store.findById('appointments', appointmentId);
     if (!appointment || (tenantId && appointment.tenantId !== tenantId)) throw business('预约不存在');
     if (appointment.status !== 'booked') throw business('仅已预约记录可完成');
     return this.store.update('appointments', appointmentId, {
@@ -103,15 +122,15 @@ class AppointmentManager {
     });
   }
 
-  listByTenant(tenantId, opts = {}) {
-    let list = this.store.find('appointments', a => a.tenantId === tenantId);
+  async listByTenant(tenantId, opts = {}) {
+    let list = await this.store.find('appointments', a => a.tenantId === tenantId);
     if (opts.date) list = list.filter(a => a.date === opts.date);
     if (opts.status) list = list.filter(a => a.status === opts.status);
     return list.sort((a, b) => (a.date + a.slot).localeCompare(b.date + b.slot));
   }
 
-  listByMember(memberId) {
-    return this.store.find('appointments', a => a.memberId === memberId)
+  async listByMember(memberId) {
+    return (await this.store.find('appointments', a => a.memberId === memberId))
       .sort((a, b) => (b.date + b.slot).localeCompare(a.date + a.slot));
   }
 }

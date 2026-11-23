@@ -6,7 +6,7 @@ Page({
     var that = this;
     api.request('/api/wx/appointments/services').then(function(list) {
       that.setData({ services: list });
-    }).catch(function(e) { wx.showToast({ title: e.message, icon: 'none' }); });
+    }).catch(function(e) { api.showError(e, '预约服务加载失败'); });
     var mid = api.memberId();
     if (mid) {
       api.request('/api/wx/member/' + mid + '/appointments').then(function(list) {
@@ -23,7 +23,7 @@ Page({
     api.request('/api/wx/appointments/slots?serviceId=' + sid + '&date=' + date).then(function(slots) {
       that.data.slotsMap[sid] = slots;
       that.setData({ slotsMap: that.data.slotsMap });
-    }).catch(function(err) { wx.showToast({ title: err.message, icon: 'none' }); });
+    }).catch(function(err) { api.showError(err, '预约时段加载失败'); });
   },
   pickSlot(e) {
     var d = e.currentTarget.dataset;
@@ -41,6 +41,6 @@ Page({
     }).then(function() {
       wx.showToast({ title: '预约成功' });
       that.load();
-    }).catch(function(err) { wx.showToast({ title: err.message, icon: 'none' }); });
+    }).catch(function(err) { api.showError(err, '预约提交失败'); });
   }
 });

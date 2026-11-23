@@ -15,7 +15,7 @@ class ProductManager {
   }
 
   // ---------- 分类 ----------
-  createCategory(tenantId, data) {
+  async createCategory(tenantId, data) {
     const cat = {
       id: uuidv4(),
       tenantId,
@@ -23,17 +23,34 @@ class ProductManager {
       sort: Number(data.sort) || 0,
       createdAt: new Date().toISOString()
     };
-    this.store.insert('categories', cat);
+    await this.store.insert('categories', cat);
     return cat;
   }
 
-  listCategories(tenantId) {
-    return this.store.find('categories', c => c.tenantId === tenantId)
+  async listCategories(tenantId) {
+    return (await this.store.find('categories', c => c.tenantId === tenantId))
       .sort((a, b) => (a.sort || 0) - (b.sort || 0));
   }
 
+  async updateCategory(id, data) {
+    const category = await this.store.findById('categories', id);
+    if (!category) throw business('分类不存在');
+    const patch = {};
+    if (data.name !== undefined) patch.name = String(data.name).slice(0, 20);
+    if (data.sort !== undefined) patch.sort = Number(data.sort) || 0;
+    return this.store.update('categories', id, patch);
+  }
+
+  async removeCategory(id) {
+    const category = await this.store.findById('categories', id);
+    if (!category) throw business('分类不存在');
+    const used = await this.store.count('products', p => p.categoryId === id);
+    if (used > 0) throw business('该分类下仍有 ' + used + ' 个商品，请先调整商品分类');
+    return this.store.remove('categories', id);
+  }
+
   // ---------- 商品 ----------
-  create(tenantId, data) {
+  async create(tenantId, data) {
     const price = Math.round(Number(data.price) * 100); // 元 -> 分
     if (!(price > 0)) throw business('商品价格必须大于0');
     const item = {
@@ -52,12 +69,12 @@ class ProductManager {
       createdAt: new Date().toISOString()
     };
     if (!item.name) throw business('商品名称不能为空');
-    this.store.insert('products', item);
+    await this.store.insert('products', item);
     return item;
   }
 
-  update(id, patch) {
-    const item = this.store.findById('products', id);
+  async update(id, patch) {
+    const item = await this.store.findById('products', id);
     if (!item) throw business('商品不存在');
     const allow = ['name', 'description', 'image', 'categoryId', 'unit', 'stock', 'onSale', 'sort'];
     const clean = {};
@@ -68,16 +85,83 @@ class ProductManager {
     return this.store.update('products', id, clean);
   }
 
-  remove(id) {
+  async remove(id) {
     return this.store.remove('products', id);
   }
 
-  get(id) {
+  async adjustStock(tenantId, productId, data, actor = {}) {
+    const product = await this.get(productId);
+    if (!product || product.tenantId !== tenantId) throw business('商品不存在');
+    const delta = Math.trunc(Number(data.delta) || 0);
+    if (!delta) throw business('库存调整数量不能为 0');
+    const reason = String(data.reason || '').trim().slice(0, 100);
+    if (!reason) throw business('请填写库存调整原因');
+    const before = Math.max(0, Number(product.stock || 0));
+    const after = before + delta;
+    if (after < 0) throw business('调整后库存不能小于 0');
+    return this.store.transaction(async () => {
+      await this.store.update('products', productId, { stock: after });
+      const record = {
+        id: uuidv4(),
+        tenantId,
+        productId,
+        productName: product.name,
+        before,
+        delta,
+        after,
+        reason,
+        actorId: actor.id || '',
+        actorName: actor.name || '',
+        createdAt: new Date().toISOString()
+      };
+      await this.store.insert('inventoryAdjustments', record);
+      return record;
+    });
+  }
+
+  async listInventoryAdjustments(tenantId, productId, limit = 20) {
+    return (await this.store.find('inventoryAdjustments', item =>
+      item.tenantId === tenantId && (!productId || item.productId === productId))
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, Math.max(1, Number(limit) || 20)));
+  }
+
+  async undoInventoryAdjustment(tenantId, adjustmentId, actor = {}) {
+    const record = await this.store.findById('inventoryAdjustments', adjustmentId);
+    if (!record || record.tenantId !== tenantId) throw business('库存调整记录不存在');
+    if (record.undoneAt || record.reversedAdjustmentId) throw business('该库存调整已经撤销');
+    const product = await this.get(record.productId);
+    if (!product || product.tenantId !== tenantId) throw business('商品不存在');
+    const next = Number(product.stock || 0) - Number(record.delta || 0);
+    if (next < 0) throw business('当前库存不足以撤销这次调整');
+    return this.store.transaction(async () => {
+      await this.store.update('products', product.id, { stock: next });
+      await this.store.update('inventoryAdjustments', record.id, { undoneAt: new Date().toISOString(), undoneBy: actor.id || '' });
+      const reversal = {
+        id: uuidv4(),
+        tenantId,
+        productId: product.id,
+        productName: product.name,
+        before: Number(product.stock || 0),
+        delta: -Number(record.delta || 0),
+        after: next,
+        reason: '撤销库存调整：' + record.reason,
+        actorId: actor.id || '',
+        actorName: actor.name || '',
+        reversedAdjustmentId: record.id,
+        createdAt: new Date().toISOString()
+      };
+      await this.store.insert('inventoryAdjustments', reversal);
+      return reversal;
+    });
+  }
+
+  async get(id) {
     return this.store.findById('products', id);
   }
 
-  list(tenantId, opts = {}) {
-    let list = this.store.find('products', p => p.tenantId === tenantId);
+  async list(tenantId, opts = {}) {
+    let list = await this.store.find('products', p => p.tenantId === tenantId);
     if (opts.categoryId) list = list.filter(p => p.categoryId === opts.categoryId);
     if (opts.onSaleOnly) list = list.filter(p => p.onSale);
     if (opts.keyword) {
@@ -88,8 +172,8 @@ class ProductManager {
   }
 
   /** 下单时扣减可用库存，库存不足返回false（不影响销量） */
-  deductStock(productId, qty) {
-    const p = this.get(productId);
+  async deductStock(productId, qty) {
+    const p = await this.get(productId);
     if (!p) throw business('商品不存在');
     if (p.stock < qty) return false;
     // 原子条件扣减：防并发超卖
@@ -97,24 +181,24 @@ class ProductManager {
   }
 
   /** 取消/超时释放库存（不影响销量） */
-  restoreStock(productId, qty) {
-    const p = this.get(productId);
+  async restoreStock(productId, qty) {
+    const p = await this.get(productId);
     if (!p) return;
-    this.store.update('products', productId, { stock: p.stock + qty });
+    await this.store.update('products', productId, { stock: p.stock + qty });
   }
 
   /** 支付成功后累加销量 */
-  increaseSales(productId, qty) {
-    const p = this.get(productId);
+  async increaseSales(productId, qty) {
+    const p = await this.get(productId);
     if (!p) return;
-    this.store.update('products', productId, { sales: p.sales + qty });
+    await this.store.update('products', productId, { sales: p.sales + qty });
   }
 
   /** 退款时回退销量 */
-  decreaseSales(productId, qty) {
-    const p = this.get(productId);
+  async decreaseSales(productId, qty) {
+    const p = await this.get(productId);
     if (!p) return;
-    this.store.update('products', productId, { sales: Math.max(0, p.sales - qty) });
+    await this.store.update('products', productId, { sales: Math.max(0, p.sales - qty) });
   }
 }
 

@@ -9,12 +9,13 @@ const { business } = require('../errors');
 const { randomUUID: uuidv4 } = require('crypto');
 
 class CouponManager {
-  constructor(store, config) {
+  constructor(store, config, auditLog) {
     this.store = store;
     this.config = config || { maxPerOrder: 1 };
+    this.auditLog = auditLog || null;
   }
 
-  createTemplate(tenantId, data) {
+  async createTemplate(tenantId, data) {
     const tpl = {
       id: uuidv4(),
       tenantId,
@@ -28,23 +29,50 @@ class CouponManager {
       createdAt: new Date().toISOString()
     };
     if (tpl.amount <= 0) throw business('优惠金额必须大于0');
-    this.store.insert('couponTemplates', tpl);
+    await this.store.insert('couponTemplates', tpl);
     return tpl;
   }
 
-  listTemplates(tenantId) {
+  async listTemplates(tenantId) {
     return this.store.find('couponTemplates', t => t.tenantId === tenantId);
   }
 
-  getTemplate(id) {
-    return this.store.findById('couponTemplates', id) || null;
+  async updateTemplate(id, data) {
+    const tpl = await this.store.findById('couponTemplates', id);
+    if (!tpl) throw business('优惠券不存在');
+    const patch = {};
+    if (data.name !== undefined) patch.name = String(data.name).slice(0, 30);
+    if (data.threshold !== undefined) patch.threshold = Math.round(Number(data.threshold) * 100);
+    if (data.amount !== undefined) {
+      const amount = Math.round(Number(data.amount) * 100);
+      if (!(amount > 0)) throw business('优惠金额必须大于0');
+      patch.amount = amount;
+    }
+    if (data.validDays !== undefined) patch.validDays = Math.max(1, Number(data.validDays));
+    if (data.limitPerMember !== undefined) patch.limitPerMember = Math.max(1, Number(data.limitPerMember));
+    if (data.enabled !== undefined) patch.enabled = !!data.enabled;
+    return this.store.update('couponTemplates', id, patch);
   }
 
-  claim(templateId, memberId) {
-    const tpl = this.store.findById('couponTemplates', templateId);
+  async removeTemplate(id) {
+    const tpl = await this.store.findById('couponTemplates', id);
+    if (!tpl) throw business('优惠券不存在');
+    const issued = await this.store.count('coupons', c => c.templateId === id);
+    if (issued > 0) throw business('该优惠券已有 ' + issued + ' 张领取记录，请改为停用');
+    return this.store.remove('couponTemplates', id);
+  }
+
+  async getTemplate(id) {
+    return await this.store.findById('couponTemplates', id) || null;
+  }
+
+  async claim(templateId, memberId) {
+    return this.store.transaction(async () => {
+    await this.store.lock('coupon-claim:' + templateId + ':' + memberId);
+    const tpl = await this.store.findById('couponTemplates', templateId);
     if (!tpl || !tpl.enabled) throw business('优惠券不存在或已停用');
 
-    const claimed = this.store.count('coupons',
+    const claimed = await this.store.count('coupons',
       c => c.templateId === templateId && c.memberId === memberId);
     if (claimed >= tpl.limitPerMember) throw business('已达领取上限');
 
@@ -64,16 +92,18 @@ class CouponManager {
       createdAt: now.toISOString(),
       usedAt: null
     };
-    this.store.insert('coupons', c);
+    await this.store.insert('coupons', c);
+    await this._audit('coupon.claim', c, { templateId, memberId });
     return c;
+    });
   }
 
-  listMine(memberId, status) {
-    let list = this.store.find('coupons', c => c.memberId === memberId);
+  async listMine(memberId, status) {
+    let list = await this.store.find('coupons', c => c.memberId === memberId);
     const now = Date.now();
     for (const c of list) {
       if (c.status === 'unused' && new Date(c.expireAt).getTime() < now) {
-        this.store.update('coupons', c.id, { status: 'expired' });
+        await this.store.update('coupons', c.id, { status: 'expired' });
         c.status = 'expired';
       }
     }
@@ -82,9 +112,9 @@ class CouponManager {
   }
 
   /** 校验并返回可用优惠券（仅未使用状态可用） */
-  validate(couponId, memberId, orderAmount) {
+  async validate(couponId, memberId, orderAmount) {
     if (!couponId) return null;
-    const c = this.store.findById('coupons', couponId);
+    const c = await this.store.findById('coupons', couponId);
     if (!c) throw business('优惠券不存在');
     if (c.memberId !== memberId) throw business('优惠券不属于当前会员');
     if (c.status !== 'unused') throw business('优惠券已使用或已被占用');
@@ -94,29 +124,49 @@ class CouponManager {
   }
 
   /** 下单时预留优惠券 */
-  reserve(couponId, orderId) {
-    const c = this.store.findById('coupons', couponId);
+  async reserve(couponId, orderId) {
+    return this.store.transaction(async () => {
+    const c = await this.store.findByIdForUpdate('coupons', couponId);
     if (!c) throw business('优惠券不存在');
     if (c.status !== 'unused') throw business('优惠券已使用或已被占用');
-    return this.store.update('coupons', couponId, { status: 'reserved', reservedByOrderId: orderId, reservedAt: new Date().toISOString() });
+    const updated = await this.store.update('coupons', couponId, { status: 'reserved', reservedByOrderId: orderId, reservedAt: new Date().toISOString() });
+    await this._audit('coupon.reserve', updated, { orderId });
+    return updated;
+    });
   }
 
   /** 取消订单时释放预留 */
-  release(couponId, orderId) {
-    const c = this.store.findById('coupons', couponId);
+  async release(couponId, orderId) {
+    const c = await this.store.findByIdForUpdate('coupons', couponId);
     if (!c) return;
     if (c.status === 'reserved' && c.reservedByOrderId === orderId) {
-      this.store.update('coupons', couponId, { status: 'unused', reservedByOrderId: null, reservedAt: null });
+      await this.store.update('coupons', couponId, { status: 'unused', reservedByOrderId: null, reservedAt: null });
+      await this._audit('coupon.release', c, { orderId });
     }
   }
 
   /** 支付成功核销（允许 reserved -> used） */
-  use(couponId) {
-    const c = this.store.findById('coupons', couponId);
+  async use(couponId) {
+    const c = await this.store.findByIdForUpdate('coupons', couponId);
     if (!c) return;
     if (c.status === 'reserved' || c.status === 'unused') {
-      this.store.update('coupons', couponId, { status: 'used', usedAt: new Date().toISOString(), reservedByOrderId: null });
+      await this.store.update('coupons', couponId, { status: 'used', usedAt: new Date().toISOString(), reservedByOrderId: null });
+      await this._audit('coupon.use', c, {});
     }
+  }
+
+  async _audit(action, coupon, detail) {
+    if (!this.auditLog || !coupon) return;
+    try {
+      await this.auditLog.record({
+        tenantId: coupon.tenantId,
+        actorType: 'system',
+        action,
+        resource: 'coupon',
+        resourceId: coupon.id,
+        detail: { memberId: coupon.memberId, templateId: coupon.templateId, ...detail }
+      });
+    } catch (error) {}
   }
 }
 

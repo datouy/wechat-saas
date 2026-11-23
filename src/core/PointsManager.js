@@ -7,20 +7,21 @@
 const { randomUUID: uuidv4 } = require('crypto');
 
 class PointsManager {
-  constructor(store, config) {
+  constructor(store, config, auditLog) {
     this.store = store;
     this.config = config || { enabled: true, ratePerYuan: 1, maxPercentPerOrder: 50 };
+    this.auditLog = auditLog || null;
   }
 
   /** 获取会员积分余额 */
-  getBalance(memberId) {
-    return this.store
-      .find('pointsLedger', p => p.memberId === memberId)
+  async getBalance(memberId) {
+    return (await this.store
+      .find('pointsLedger', p => p.memberId === memberId))
       .reduce((sum, p) => sum + p.change, 0);
   }
 
   /** 变更积分（正为收入，负为支出），返回新余额 */
-  change(memberId, amount, reason, refId) {
+  async change(memberId, amount, reason, refId, actor = {}) {
     amount = Math.round(Number(amount) || 0);
     if (!amount) return this.getBalance(memberId);
 
@@ -32,22 +33,39 @@ class PointsManager {
       refId: refId || '',
       createdAt: new Date().toISOString()
     };
-    this.store.insert('pointsLedger', entry);
-    return this.getBalance(memberId);
+    return this.store.transaction(async () => {
+      await this.store.insert('pointsLedger', entry);
+      if (this.auditLog) {
+        const member = await this.store.findById('members', memberId);
+        try {
+          await this.auditLog.record({
+          tenantId: member ? member.tenantId : '',
+          actorType: actor.type || 'system',
+          actorId: actor.id || '',
+          actorName: actor.name || '',
+          action: 'points.change',
+          resource: 'member',
+          resourceId: memberId,
+          detail: { change: amount, reason: entry.reason, refId: entry.refId }
+          });
+        } catch (error) { /* 审计异常不阻断积分主链路 */ }
+      }
+      return this.getBalance(memberId);
+    });
   }
 
   /** 支付成功后按金额发放积分 */
-  earnByOrder(memberId, orderId, paidAmount) {
+  async earnByOrder(memberId, orderId, paidAmount) {
     if (!this.config.enabled) return 0;
     const rate = Number(this.config.ratePerYuan) || 0;
     const earn = Math.floor(Number(paidAmount) * rate);
-    if (earn > 0) this.change(memberId, earn, '消费返积分', orderId);
+    if (earn > 0) await this.change(memberId, earn, '消费返积分', orderId);
     return earn;
   }
 
   /** 下单时计算积分抵扣金额 */
-  calcDiscount(memberId, orderAmount, usePoints) {
-    const balance = this.getBalance(memberId);
+  async calcDiscount(memberId, orderAmount, usePoints) {
+    const balance = await this.getBalance(memberId);
     const maxUsableByPercent = Math.floor(orderAmount * (this.config.maxPercentPerOrder / 100));
     // 1积分=0.01元，且不超过订单金额的可抵扣上限与积分余额
     const usable = Math.min(Number(usePoints) || 0, balance, maxUsableByPercent * 100);
@@ -60,9 +78,9 @@ class PointsManager {
   }
 
   /** 积分流水列表 */
-  getLedger(memberId, limit = 50) {
-    return this.store
-      .find('pointsLedger', p => p.memberId === memberId)
+  async getLedger(memberId, limit = 50) {
+    return (await this.store
+      .find('pointsLedger', p => p.memberId === memberId))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, limit);
   }

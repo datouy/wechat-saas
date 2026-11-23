@@ -14,6 +14,7 @@ class AuthService {
     this.secret = config.secret || process.env.AUTH_SECRET || '';
     this.memberTtlSeconds = Number(config.memberTtlSeconds) || 7 * 86400;
     this.adminTtlSeconds = Number(config.adminTtlSeconds) || 12 * 3600;
+    this.platformTtlSeconds = Number(config.platformTtlSeconds) || 8 * 3600;
   }
 
   /** 生产环境禁止使用空密钥启动 */
@@ -44,7 +45,22 @@ class AuthService {
   }
 
   issueAdminToken(admin) {
-    return this.issue({ typ: 'admin', sub: admin.id, tenantId: admin.tenantId, role: admin.role || 'admin' }, this.adminTtlSeconds);
+    return this.issue({
+      typ: 'admin',
+      sub: admin.id,
+      tenantId: admin.tenantId,
+      role: admin.role || 'admin',
+      ver: Number(admin.tokenVersion || 0)
+    }, this.adminTtlSeconds);
+  }
+
+  issuePlatformToken(operator) {
+    return this.issue({
+      typ: 'platform',
+      sub: operator.id,
+      username: operator.username,
+      ver: Number(operator.tokenVersion || 0)
+    }, this.platformTtlSeconds);
   }
 
   /** 校验令牌并返回载荷，失败返回 null */
