@@ -15,7 +15,6 @@
       <span id="storeName">邻里团</span>
     </a>
     <div class="header-actions">
-      <span class="demo-chip">顾客体验</span>
       <a class="service-link" id="customerServiceLink" href="#/" hidden>联系门店</a>
       <a class="back-link" href="/">进入经营台</a>
     </div>
@@ -23,37 +22,9 @@
 </header>
 
 <main class="shop-main" id="shopMain">
-  <section class="hero">
-    <div class="hero-copy">
-      <span class="eyebrow">社区团购</span>
-      <h1 id="heroTitle">今天也把好物，<br>送到邻里身边。</h1>
-      <p id="heroDescription">正在载入门店...</p>
-      <div class="hero-actions">
-        <a class="button primary" href="#products">开始选购</a>
-        <a class="button" href="#orders">查看我的订单</a>
-      </div>
-    </div>
-    <div class="hero-visual">
-      <div class="visual-card visual-card-main">
-        <span class="visual-icon">今日</span>
-        <strong id="heroGroupCount">2</strong>
-        <small>个邻里团正在进行</small>
-      </div>
-      <div class="visual-card visual-card-small">
-        <span>会员积分</span>
-        <strong id="heroPoints">--</strong>
-      </div>
-      <div class="visual-stamp">本地精选<br>社区自提</div>
-    </div>
-  </section>
-
-  <div class="announcement" id="announcement"></div>
-
   <section class="member-strip" id="memberStrip">
     <div>
-      <span class="eyebrow">会员中心</span>
-      <h2 id="memberGreeting">正在登录体验账号</h2>
-      <p id="memberMeta">体验团购、优惠券、积分抵扣与自提履约。</p>
+      <h2 id="memberGreeting">邻里会员</h2>
       <div class="account-actions">
         <button type="button" class="text-action" id="openAddresses">收货地址</button>
         <button type="button" class="text-action" id="openAfterSales">售后记录</button>
@@ -68,15 +39,14 @@
 
   <section class="section-block">
     <div class="section-head">
-      <div><span class="eyebrow">正在成团</span><h2>邻里团正在进行</h2></div>
-      <span class="section-note">成团后按团购价结算</span>
+      <h2>团购</h2>
     </div>
     <div class="group-grid" id="groupGrid"></div>
   </section>
 
   <section class="section-block" id="products">
     <div class="section-head">
-      <div><span class="eyebrow">今日精选</span><h2>今天值得带回家</h2></div>
+      <h2>商品</h2>
       <div class="category-tabs" id="categoryTabs"></div>
     </div>
     <div class="product-grid" id="productGrid"></div>
@@ -84,15 +54,9 @@
 
   <section class="section-block" id="orders">
     <div class="section-head">
-      <div><span class="eyebrow">我的订单</span><h2>最近订单</h2></div>
-      <span class="section-note" id="orderHint">支付后可回到经营台处理履约</span>
+      <h2>订单</h2>
     </div>
     <div class="order-list" id="orderList"></div>
-  </section>
-
-  <section class="closing-note">
-    <span>10 分钟体验路线</span>
-    <strong>选购并支付 → 回到经营台处理待办 → 打开客户档案查看会员资产</strong>
   </section>
 </main>
 

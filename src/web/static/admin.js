@@ -385,24 +385,10 @@
   }
 
   async function renderToday(params) {
-    var results = await Promise.all([
-      request('/api/admin/today'),
-      request('/api/admin/onboarding')
-    ]);
-    var data = results[0];
-    var onboarding = results[1];
-    var todayStep = (onboarding.steps || []).find(function (step) { return step.id === 'today'; });
-    if (todayStep && !todayStep.completed) {
-      onboarding = await request('/api/admin/onboarding/today', { method: 'POST', body: {} });
-    }
+    var data = await request('/api/admin/today');
     var processing = (data.tasks || []).reduce(function (sum, task) {
       return sum + (task.id === 'groupbuy' || task.id === 'stock' ? 0 : Number(task.count || 0));
     }, 0);
-    var store = state.store || {};
-    var signals = data.businessSignals || {};
-    var signalGroups = signals.groupBuys || {};
-    var signalForms = signals.forms || {};
-    var signalAppointments = signals.appointments || {};
     var trend = data.trend || [];
     var maxTrend = Math.max.apply(null, trend.map(function (item) { return Number(item.amount) || 0; }).concat([1]));
     var trendBars = trend.map(function (item) {
@@ -428,32 +414,26 @@
       var taskClass = task.id === 'refund' || task.id === 'stock' ? 'danger' : task.id === 'groupbuy' ? 'warm' : '';
       return '<a class="task-row ' + taskClass + '" href="' + esc(task.href) + '"><div class="task-main"><div class="task-title"><span>' + esc(task.title) + '</span><span class="count">' + Number(task.count) + '</span></div><div class="task-meta">' + esc(items) + '</div></div><span class="row-arrow">›</span></a>';
     }).join('') : empty('今天没有待办');
-    var checklist = (onboarding.steps || []).map(function (step, index) {
-      return '<div class="tour-step ' + (step.completed ? 'done' : '') + '"><b>0' + (index + 1) + '</b><span>' + esc(step.label) + '</span><small>' + esc(step.description) + '</small><i>' + (step.completed ? '已完成' : '待完成') + '</i></div>';
-    }).join('');
     var recommendations = (data.recommendations || []).map(function (item) {
-      return '<a class="signal-card ' + esc(item.priority || 'normal') + '" href="' + esc(item.action || '#/today') + '"><span>经营建议</span><strong>' + esc(item.title) + '</strong><p>' + esc(item.detail) + '</p><b>去处理</b></a>';
+      return '<a class="signal-card ' + esc(item.priority || 'normal') + '" href="' + esc(item.action || '#/today') + '"><strong>' + esc(item.title) + '</strong><p>' + esc(item.detail) + '</p></a>';
     }).join('');
     var anomalies = (data.anomalies || []).map(function (item) {
       return '<div class="anomaly-row"><span class="status-dot"></span><div><strong>' + esc(item.title) + '</strong><small>' + esc(item.detail) + '</small></div><b>' + esc(item.type === 'pickup-overdue' ? '超时' : item.type === 'stockout-risk' ? '缺货' : '差一人') + '</b></div>';
     }).join('');
+    var actions = '<section class="quick-actions">' +
+      '<button type="button" class="button" data-action="open-shop">打开顾客体验端</button>' +
+      (state.session && state.session.demo && isOwner() ? '<button type="button" class="button" data-action="demo-reset">重新载入演示数据</button>' : '') +
+      '</section>';
+    var insights = [];
+    if (recommendations.length) insights.push('<div class="panel-card"><div class="panel-head"><h3>建议</h3></div><div class="signal-card-list">' + recommendations + '</div></div>');
+    if (anomalies.length) insights.push('<div class="panel-card"><div class="panel-head"><h3>异常</h3></div><div class="anomaly-list">' + anomalies + '</div></div>');
     byId('content').innerHTML =
-      '<section class="dashboard-hero"><div class="dashboard-hero-copy"><span class="page-kicker">今日经营</span>' +
-      '<h2>社区好物，从一个清晰的经营节奏开始。</h2>' +
-      '<p>' + esc(store.tagline || '把待办、交易和客户放在同一个清楚的经营节奏里。') + '</p>' +
-      '<div class="hero-actions"><button type="button" class="button hero-primary" data-action="open-shop">打开顾客体验端</button>' +
-      (state.session && state.session.demo && isOwner() ? '<button type="button" class="button hero-secondary" data-action="demo-reset">重新载入演示数据</button>' : '') + '</div></div>' +
-      '<div class="dashboard-hero-note"><span>' + esc(store.name || '邻里团') + ' · ' + esc(data.date) + '</span><strong>' + esc(store.announcement || '今天也把好物送到邻里身边。') + '</strong>' +
-      '<div class="signal-list"><div><span>进行中团购</span><strong>' + Number(signalGroups.active || 0) + '</strong></div><div><span>问卷提交</span><strong>' + Number(signalForms.submissions || 0) + '</strong></div><div><span>今日预约</span><strong>' + Number(signalAppointments.today || 0) + '</strong></div></div></div></section>' +
-      '<section class="tour-strip tour-checklist"><div class="tour-title"><span>首次体验 · ' + Number(onboarding.completed || 0) + ' / ' + Number(onboarding.total || 3) + '</span><strong>完成三项真实操作，建立经营闭环</strong></div>' +
-      '<div class="tour-steps">' + checklist + '</div>' +
-      '<button type="button" class="button small" data-action="open-shop">' + (Number(onboarding.completed || 0) >= 3 ? '再次体验' : '继续体验') + '</button></section>' +
-      '<section class="insight-grid"><div class="panel-card"><div class="panel-head"><div><span class="panel-kicker">今日动作</span><h3>建议先做这些</h3></div><span class="tag amber">' + Number((data.recommendations || []).length) + ' 条</span></div><div class="signal-card-list">' + (recommendations || empty('今天的经营建议正在计算')) + '</div></div>' +
-      '<div class="panel-card"><div class="panel-head"><div><span class="panel-kicker">异常雷达</span><h3>可能影响履约</h3></div><span class="tag ' + ((data.anomalies || []).length ? 'red' : 'gray') + '">' + Number((data.anomalies || []).length) + ' 项</span></div><div class="anomaly-list">' + (anomalies || '<div class="quiet-state">当前没有需要紧急处理的异常。</div>') + '</div></div></section>' +
+      actions +
+      (insights.length ? '<section class="insight-grid">' + insights.join('') + '</section>' : '') +
       summary +
-      '<div class="dashboard-columns"><section><div class="section-heading"><h3>现在要处理</h3><span>' + tasks.length + ' 组待办</span></div><div class="task-list">' + taskHtml + '</div></section>' +
-      '<aside><div class="panel-card"><div class="panel-head"><div><span class="panel-kicker">成交趋势</span><h3>近 7 日成交</h3></div><strong>' + yuan((data.total || {}).amount || 0) + '<small>累计</small></strong></div><div class="trend-chart">' + trendBars + '</div></div>' +
-      '<div class="panel-card"><div class="panel-head"><div><span class="panel-kicker">商品表现</span><h3>热销商品</h3></div></div><div class="rank-list">' + topProducts + '</div></div></aside></div>';
+      '<div class="dashboard-columns"><section><div class="section-heading"><h3>待办</h3><span>' + tasks.length + ' 组</span></div><div class="task-list">' + taskHtml + '</div></section>' +
+      '<aside><div class="panel-card"><div class="panel-head"><h3>近 7 日成交</h3></div><div class="trend-chart">' + trendBars + '</div></div>' +
+      '<div class="panel-card"><div class="panel-head"><h3>热销商品</h3></div><div class="rank-list">' + topProducts + '</div></div></aside></div>';
   }
 
   async function renderProducts(params) {
@@ -974,7 +954,7 @@
         button(coupon.enabled ? '停用' : '启用', 'coupon-toggle', false, 'data-id="' + esc(coupon.id) + '"') +
         button('删除', 'coupon-delete', false, 'data-id="' + esc(coupon.id) + '"') : '') + '</td></tr>';
     }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>让优惠服务于复购</h2><p>优惠券会同步出现在顾客端，并在客户档案中记录领取与使用状态。</p></div></div>' +
+    byId('content').innerHTML =
       '<div class="data-panel"><div class="table-wrap"><table><thead><tr><th>名称</th><th>门槛</th><th>优惠</th><th>有效期</th><th>领取上限</th><th>状态</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="7">' + empty('还没有优惠券') + '</td></tr>') + '</tbody></table></div>' +
       pageInfo(data, function (page) { return routeHref('coupons', params, { page: page }); }) + '</div>';
@@ -1032,7 +1012,7 @@
         '<td class="cell-nowrap">' + shortDate(form.createdAt) + '</td><td class="cell-actions">' + button('统计', 'survey-stats', false, 'data-id="' + esc(form.id) + '"') +
         (canManage() ? button('编辑', 'survey-edit', false, 'data-id="' + esc(form.id) + '"') + button(form.status === 'open' ? '停止收集' : '重新开放', 'survey-toggle', false, 'data-id="' + esc(form.id) + '"') : '') + '</td></tr>';
     }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>把顾客意见变成下一步经营</h2><p>问卷支持编辑、停止收集和实时统计，适合每周选品与服务质量复盘。</p></div></div><div class="data-panel"><div class="table-wrap"><table><thead><tr><th>问卷</th><th>题数</th><th>状态</th><th>创建时间</th><th></th></tr></thead><tbody>' +
+    byId('content').innerHTML = '<div class="data-panel"><div class="table-wrap"><table><thead><tr><th>问卷</th><th>题数</th><th>状态</th><th>创建时间</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="5">' + empty('还没有问卷') + '</td></tr>') + '</tbody></table></div>' +
       pageInfo(data, function (page) { return routeHref('surveys', params, { page: page }); }) + '</div>';
   }
@@ -1143,7 +1123,7 @@
     var statusTabs = [['', '全部'], ['booked', '已预约'], ['completed', '已完成'], ['cancelled', '已取消']].map(function (item) {
       return '<a class="filter-tab ' + ((params.get('status') || '') === item[0] ? 'active' : '') + '" href="' + routeHref('appointments', params, { status: item[0], ap: 1 }) + '">' + item[1] + '</a>';
     }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>把服务也放进同一套经营流程</h2><p>服务启用后立即对顾客开放，按时段容量防止重复预约。</p></div></div>' +
+    byId('content').innerHTML =
       '<div class="section-heading"><h3>服务</h3></div><div class="data-panel"><div class="table-wrap"><table><thead><tr><th>服务</th><th>价格</th><th>时长</th><th>容量</th><th>状态</th><th></th></tr></thead><tbody>' +
       (serviceRows || '<tr><td colspan="6">' + empty('还没有服务') + '</td></tr>') + '</tbody></table></div>' +
       pageInfo(services, function (page) { return routeHref('appointments', params, { sp: page }); }) + '</div>' +
@@ -1220,7 +1200,7 @@
     var tabs = [['', '全部'], ['pending', '待受理'], ['approved', '已受理'], ['resolved', '已完成'], ['rejected', '已拒绝'], ['closed', '已关闭']].map(function (item) {
       return '<a class="filter-tab ' + ((params.get('status') || '') === item[0] ? 'active' : '') + '" href="' + routeHref('after-sales', params, { status: item[0], page: 1 }) + '">' + item[1] + '</a>';
     }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>先响应，再处理资金</h2><p>售后申请与订单、客户、订阅消息和审计链关联，避免口头承诺找不到记录。</p></div></div>' +
+    byId('content').innerHTML =
       '<div class="toolbar"><div class="filter-tabs">' + tabs + '</div><span class="toolbar-spacer"></span><span class="section-note">建议在 2 小时内完成首次响应</span></div>' +
       '<div class="data-panel"><div class="table-wrap"><table><thead><tr><th>工单 / 订单</th><th>客户</th><th>类型</th><th>申请金额</th><th>原因</th><th>状态</th><th>提交时间</th><th></th></tr></thead><tbody>' +
       (rows || '<tr><td colspan="8">' + empty(params.get('status') ? '当前筛选下没有售后工单' : '还没有售后工单') + '</td></tr>') +
@@ -1288,7 +1268,7 @@
     var materials = state.growthMaterials.map(function (item) {
       return '<article class="material-card"><span>' + esc(item.type) + '</span><h4>' + esc(item.title) + '</h4><p>' + esc(item.content) + '</p>' + button('复制素材', 'growth-copy', false, 'data-id="' + esc(item.id) + '"') + '</article>';
     }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>把一次成交变成下一次复购</h2><p>按购买频次和最近互动自动分层，并用可复制的社群素材缩短运营动作。</p></div></div>' + metrics +
+    byId('content').innerHTML = metrics +
       '<div class="section-heading"><h3>会员分层</h3><span>最近一次成交距今 21 / 45 天为预警边界</span></div><div class="growth-segments">' + (segments || empty('还缺少会员数据')) + '</div>' +
       '<div class="section-heading"><h3>需要主动联系</h3><span>按最近成交时间和历史消费排序</span></div><div class="data-panel"><div class="table-wrap"><table><thead><tr><th>会员</th><th>分层</th><th>未成交</th><th>净消费</th></tr></thead><tbody>' + (recallRows || '<tr><td colspan="4">' + empty('当前没有沉睡风险会员') + '</td></tr>') + '</tbody></table></div></div>' +
       '<div class="section-heading"><h3>群运营素材</h3><span>直接复制到微信群，减少临时写文案的时间</span></div><div class="material-grid">' + (materials || empty('当前没有可生成的活动素材')) + '</div>';
@@ -1331,9 +1311,9 @@
         '<td><div class="share-meter"><span style="width:' + Number(store.share || 0) + '%"></span></div>' + Number(store.share || 0) + '%</td></tr>';
     }).join('');
     var rangeOptions = [7, 30, 90].map(function (value) { return '<a class="filter-tab ' + (value === days ? 'active' : '') + '" href="' + routeHref('reports', params, { days: value }) + '">近 ' + value + ' 天</a>'; }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>让经营决策有可核对的依据</h2><p>操作报表来自链式审计，门店对比按自提门店与配送订单分开统计。</p></div><div class="filter-tabs">' + rangeOptions + '</div></div>' +
-      '<div class="report-grid"><section class="panel-card"><div class="panel-head"><div><span class="panel-kicker">操作报表</span><h3>近 ' + Number(days) + ' 天关键动作</h3></div><strong>' + Number(operations.total || 0) + '<small>次</small></strong></div><div class="report-chart">' + daily + '</div><div class="report-action-list">' + actions + '</div></section>' +
-      '<section class="panel-card"><div class="panel-head"><div><span class="panel-kicker">数据使用</span><h3>导出与责任边界</h3></div></div><div class="capability-grid"><div class="metric-note"><span>有导出权限</span><strong>所有者 / 经营管理员</strong></div><div class="metric-note"><span>导出留痕</span><strong>写入审计链</strong></div><div class="metric-note"><span>操作者</span><strong>' + Number(operations.uniqueActors || 0) + ' 人</strong></div><div class="metric-note"><span>审计完整性</span><strong>可在审计页核验</strong></div></div></section></div>' +
+    byId('content').innerHTML = '<div class="page-intro"><div class="filter-tabs">' + rangeOptions + '</div></div>' +
+      '<div class="report-grid"><section class="panel-card"><div class="panel-head"><h3>近 ' + Number(days) + ' 天关键动作</h3><strong>' + Number(operations.total || 0) + '<small>次</small></strong></div><div class="report-chart">' + daily + '</div><div class="report-action-list">' + actions + '</div></section>' +
+      '<section class="panel-card"><div class="panel-head"><h3>导出与责任边界</h3></div><div class="capability-grid"><div class="metric-note"><span>有导出权限</span><strong>所有者 / 经营管理员</strong></div><div class="metric-note"><span>导出留痕</span><strong>写入审计链</strong></div><div class="metric-note"><span>操作者</span><strong>' + Number(operations.uniqueActors || 0) + ' 人</strong></div><div class="metric-note"><span>审计完整性</span><strong>可在审计页核验</strong></div></div></section></div>' +
       '<div class="section-heading"><h3>履约门店对比</h3><span>收入按扣除已完成退款后的订单实付统计</span></div><div class="data-panel"><div class="table-wrap"><table><thead><tr><th>门店 / 渠道</th><th>订单</th><th>成交客户</th><th>净收入</th><th>客单价</th><th>收入占比</th></tr></thead><tbody>' + (storeRows || '<tr><td colspan="6">' + empty('当前周期没有可对比数据') + '</td></tr>') + '</tbody></table></div></div>';
   }
 
@@ -1384,7 +1364,7 @@
     }).join('');
     var chainState = '<section class="audit-chain ' + (verify.valid ? 'valid' : 'invalid') + '"><div><span>' + (verify.valid ? '审计链完整' : '检测到审计链异常') + '</span><strong>' + Number(verify.checked || 0) + ' 条记录已核验</strong><small>' + (verify.headHash ? '链头 ' + esc(verify.headHash.slice(0, 16)) + '…' : '尚未产生审计记录') + '</small></div>' +
       ((verify.problems || []).length ? '<div class="audit-problems">' + verify.problems.map(function (item) { return '<p>' + esc(item.message) + ' · ' + esc(item.id || '') + '</p>'; }).join('') + '</div>' : '<b>SHA-256 链式校验通过</b>') + '</section>';
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>每一次关键操作都有记录</h2><p>用于排查误操作、权限争议与交易异常。</p></div></div>' + chainState + '<div class="toolbar">' +
+    byId('content').innerHTML = chainState + '<div class="toolbar">' +
       '<label class="inline-field"><span>操作类型</span><select id="auditActionFilter">' + actionOptions + '</select></label>' +
       '<label class="inline-field"><span>操作者</span><select id="auditActorFilter"><option value="">全部</option><option value="admin" ' + (params.get('actorType') === 'admin' ? 'selected' : '') + '>管理员</option><option value="member" ' + (params.get('actorType') === 'member' ? 'selected' : '') + '>顾客</option><option value="system" ' + (params.get('actorType') === 'system' ? 'selected' : '') + '>系统</option><option value="anonymous" ' + (params.get('actorType') === 'anonymous' ? 'selected' : '') + '>未登录</option></select></label>' +
       button('筛选', 'audit-filter', false) + '</div><div class="data-panel"><div class="table-wrap"><table><thead><tr><th>操作</th><th>操作者</th><th>对象</th><th>详情</th><th>时间</th></tr></thead><tbody>' +
@@ -1411,7 +1391,7 @@
     }) + diffRows('退款差异', data.refundMismatch, function (item, fmt) {
       return '<span>' + esc(item.orderNo) + '</span><b>本地 ' + fmt(item.localRefund) + ' / 账单 ' + fmt(item.billRefund) + '</b>';
     });
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>交易与本地订单逐笔核对</h2><p>选择交易日期，系统会下载微信对账单并检查漏单、金额和退款差异。</p></div>' +
+    byId('content').innerHTML = '<div class="page-intro">' +
       '<div class="reconcile-date"><label for="reconDate">交易日期</label><input id="reconDate" type="date" value="' + esc(date) + '">' + button('开始对账', 'reconcile-run', true) + '</div></div>' +
       '<section class="reconcile-result ' + (data.balanced ? 'balanced' : 'unbalanced') + '"><div><span>对账结果</span><strong>' + (data.balanced ? '账目一致' : '发现 ' + discrepancyCount + ' 项差异') + '</strong><small>' + esc(date) + ' · 共读取 ' + Number(summary.billRows || 0) + ' 条账单记录</small></div>' +
       '<div class="reconcile-metrics"><div><span>匹配支付</span><strong>' + Number(summary.matchedPayments || 0) + '</strong></div><div><span>退款记录</span><strong>' + Number(summary.refunds || 0) + '</strong></div><div><span>差异</span><strong>' + discrepancyCount + '</strong></div></div></section>' +
@@ -1474,7 +1454,7 @@
     var filters = [['', '全部'], ['failed', '待重试'], ['dead', '死信'], ['queued', '待发送'], ['sent', '已发送']].map(function (item) {
       return '<a class="filter-tab ' + (status === item[0] ? 'active' : '') + '" href="' + routeHref('operations', null, { status: item[0] }) + '">' + item[1] + '</a>';
     }).join('');
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>把经营风险变成可处理的待办</h2><p>通知队列、审计归档、订阅授权和品牌素材集中巡检。异常不再是日志里的一行文字。</p></div>' +
+    byId('content').innerHTML = '<div class="page-intro">' +
       '<div class="ops-state ' + (dead ? 'warning' : 'healthy') + '"><span></span><strong>' + (dead ? dead + ' 条死信待处理' : '核心异步链路正常') + '</strong><small>最后检查 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) + '</small></div></div>' +
       '<section class="ops-summary"><article><span>消息总量</span><strong>' + Number(stats.total || 0) + '</strong><small>待发送 ' + Number(stats.queued || 0) + ' · 发送中 ' + Number(stats.processing || 0) + '</small></article>' +
       '<article><span>待重试</span><strong>' + Number(stats.failed || 0) + '</strong><small>按指数退避自动重试</small></article><article><span>死信</span><strong>' + dead + '</strong><small>' + (dead ? '需要人工重试或核对模板' : '没有积压') + '</small></article>' +
@@ -1565,7 +1545,7 @@
       (isOwner() ? '<div class="upload-actions"><label class="button file-button">上传 Logo<input id="logoAssetInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/x-icon" data-asset-kind="logo"></label><label class="button file-button">上传 Banner<input id="bannerAssetInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" data-asset-kind="banner"></label></div>' : '<span class="tag gray">只读</span>') + '</div>' +
       '<div class="brand-current"><div class="brand-current-preview logo-preview" id="logoCurrentPreview">' + (logoUrl ? '<img src="' + esc(logoUrl) + '" alt="当前 Logo">' : '<span>Logo</span>') + '</div><div class="brand-current-preview banner-preview" id="bannerCurrentPreview">' + (bannerUrl ? '<img src="' + esc(bannerUrl) + '" alt="当前 Banner">' : '<span>Banner</span>') + '</div><div><strong>当前品牌画面</strong><small>素材地址会随门店资料保存，可用于后续小程序装修与分享卡片。</small></div></div>' +
       '<div class="brand-asset-list">' + brandAssetCards + '</div></section>';
-    byId('content').innerHTML = '<div class="page-intro"><div><h2>门店配置与运行安全</h2><p>品牌、履约门店、小程序配置、订阅消息和运行状态集中管理。</p></div></div>' +
+    byId('content').innerHTML =
       '<section class="settings-section"><div class="section-heading"><h3>品牌与小程序</h3><span>' + (isOwner() ? '仅所有者可修改' : '只读') + '</span></div><div class="settings-card"><fieldset ' + (isOwner() ? '' : 'disabled') + '><div class="form-grid">' +
       field('门店名称', '<input id="storeNameInput" maxlength="40" value="' + esc(profile.name || '') + '">') + field('品牌色', '<input id="storeBrandColor" type="color" value="' + esc(profile.brandColor || '#b84a35') + '">') +
       field('经营口号', '<input id="storeTagline" maxlength="80" value="' + esc(profile.tagline || '') + '">', true) + field('门店介绍', '<textarea id="storeDescription" maxlength="300">' + esc(profile.description || '') + '</textarea>', true) +

@@ -77,7 +77,6 @@
       await login(true);
       await loadMember();
     } catch (error) {
-      byId('heroDescription').textContent = error.message;
       toast(error.message, true);
     }
   }
@@ -106,13 +105,9 @@
 
   function renderHome() {
     var tenant = state.home.tenant || {};
-    document.title = (tenant.miniProgramTitle || tenant.name || '邻里团') + ' · 顾客体验';
+    document.title = tenant.miniProgramTitle || tenant.name || '邻里团';
     byId('storeName').textContent = tenant.name || '邻里团';
     byId('brandMark').textContent = (tenant.name || '邻').replace(/^邻里团\s*·?\s*/, '').slice(0, 1) || '邻';
-    byId('heroTitle').innerHTML = esc(tenant.tagline || '今天也把好物，送到邻里身边。').replace('，', '，<br>');
-    byId('heroDescription').textContent = tenant.description || '';
-    byId('heroGroupCount').textContent = String((state.home.groupBuys || []).length);
-    byId('announcement').textContent = tenant.announcement || '欢迎来到邻里团。';
     document.documentElement.style.setProperty('--brand', tenant.brandColor || '#b84a35');
     document.documentElement.style.removeProperty('--brand-dark');
     var customerService = byId('customerServiceLink');
@@ -128,14 +123,10 @@
   }
 
   function renderMember() {
-    byId('memberGreeting').textContent = (state.member.nickname || '邻里会员') + ' 的邻里账户';
-    byId('memberMeta').textContent = [state.member.phone, ((state.member.addresses || [])[0] || {}).detail].filter(Boolean).join(' · ') || '体验团购、积分抵扣和自提履约。';
+    byId('memberGreeting').textContent = state.member.nickname || '邻里会员';
     byId('memberPoints').textContent = state.points.balance;
-    byId('heroPoints').textContent = state.points.balance;
     byId('memberOrders').textContent = state.member.orderCount || 0;
     byId('memberCoupons').textContent = state.coupons.length;
-    var defaultAddress = (state.member.addresses || []).find(function (item) { return item.isDefault; }) || (state.member.addresses || [])[0];
-    byId('memberMeta').textContent = [state.member.phone, defaultAddress ? defaultAddress.detail : '尚未填写收货地址'].filter(Boolean).join(' · ');
   }
 
   function renderCategories() {
@@ -148,7 +139,7 @@
   function renderGroups() {
     var groups = state.home.groupBuys || [];
     if (!groups.length) {
-      byId('groupGrid').innerHTML = '<div class="group-card"><h3>下一场邻里团正在准备</h3><p>先从今天的商品里挑一份好物吧。</p></div>';
+      byId('groupGrid').innerHTML = '<div class="order-card">暂无进行中的团购</div>';
       return;
     }
     byId('groupGrid').innerHTML = groups.map(function (group) {
@@ -161,14 +152,11 @@
   }
 
   function renderProducts() {
-    var categoryMap = {};
-    (state.home.categories || []).forEach(function (category) { categoryMap[category.id] = category.name; });
     var products = state.home.products || [];
     if (state.categoryId) products = products.filter(function (product) { return product.categoryId === state.categoryId; });
     byId('productGrid').innerHTML = products.map(function (product) {
       var image = product.image ? '<img src="' + esc(product.image) + '" alt="">' : '';
       return '<article class="product-card"><div class="product-image">' + image + '</div><div class="product-body">' +
-        '<span class="product-category">' + esc(categoryMap[product.categoryId] || '社区精选') + '</span>' +
         '<h3 class="product-title">' + esc(product.name) + '</h3><p class="product-description">' + esc(product.description || '') + '</p>' +
         '<div class="product-foot"><div><span class="product-price">¥' + Number(product.price).toFixed(2) + '</span><span class="product-unit">/ ' + esc(product.unit) + '</span></div>' +
         '<button type="button" class="buy-button" data-buy="' + esc(product.id) + '">立即购买</button></div></div></article>';
@@ -177,7 +165,7 @@
 
   function renderOrders() {
     if (!state.orders.length) {
-      byId('orderList').innerHTML = '<div class="order-card"><div><strong>还没有订单</strong><small>挑选一件商品，就能看到完整履约流程。</small></div></div>';
+      byId('orderList').innerHTML = '<div class="order-card">暂无订单</div>';
       return;
     }
     byId('orderList').innerHTML = state.orders.slice(0, 6).map(function (order) {
