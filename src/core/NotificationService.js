@@ -3,6 +3,7 @@
  * 未配置或发送失败都不影响订单主链路，并保留可查询的发送记录。
  */
 const { randomUUID } = require('crypto');
+const { cnDate } = require('./time');
 
 const EVENT_LABELS = {
   orderPaid: '支付成功',
@@ -74,7 +75,7 @@ class NotificationService {
       orderNo: 'TEST-' + Date.now(),
       amount: '0.01',
       status: '测试消息',
-      date: new Date().toISOString().slice(0, 10),
+      date: cnDate(),
       time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
       pickupCode: '000000',
       serviceName: '订阅消息测试'
@@ -138,7 +139,7 @@ class NotificationService {
       orderNo: order.orderNo,
       amount: (Number(order.payAmount || 0) / 100).toFixed(2),
       status: order.status,
-      date: String(order.createdAt || '').slice(0, 10),
+      date: order.createdAt ? cnDate(new Date(order.createdAt)) : '',
       pickupCode: order.pickupCode || '',
       ...extra
     });

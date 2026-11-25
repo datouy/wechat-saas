@@ -22,7 +22,7 @@ class StatsService {
     const today = cnDate();
 
     const paidOrders = orders.filter(o => ['paid', 'delivering', 'completed'].includes(o.status));
-    const todayPaid = paidOrders.filter(o => (o.paidAt || '').startsWith(today));
+    const todayPaid = paidOrders.filter(o => o.paidAt && cnDate(new Date(o.paidAt)) === today);
 
     const sum = arr => arr.reduce((s, o) => s + (o.payAmount || 0), 0) / 100;
 
@@ -44,7 +44,7 @@ class StatsService {
     const trend = [];
     for (let i = 6; i >= 0; i--) {
       const d = cnDate(new Date(Date.now() - i * 86400000));
-      const dayOrders = paidOrders.filter(o => (o.paidAt || '').startsWith(d));
+      const dayOrders = paidOrders.filter(o => o.paidAt && cnDate(new Date(o.paidAt)) === d);
       trend.push({ date: d, orders: dayOrders.length, amount: sum(dayOrders) });
     }
 
@@ -53,7 +53,7 @@ class StatsService {
       total: { orders: paidOrders.length, amount: sum(paidOrders) },
       pendingOrders: orders.filter(o => o.status === 'pending').length,
       memberCount: members.length,
-      newMembersToday: members.filter(m => (m.createdAt || '').startsWith(today)).length,
+      newMembersToday: members.filter(m => m.createdAt && cnDate(new Date(m.createdAt)) === today).length,
       topProducts,
       trend,
       groupBuys: {

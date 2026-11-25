@@ -37,7 +37,7 @@ class ReportsService {
       actionMap.set(action, (actionMap.get(action) || 0) + 1);
       const actor = item.actorName || item.actorType || '系统';
       actorMap.set(actor, (actorMap.get(actor) || 0) + 1);
-      const day = String(item.createdAt || '').slice(0, 10);
+      const day = item.createdAt ? cnDate(new Date(item.createdAt)) : '';
       if (day) dayMap.set(day, (dayMap.get(day) || 0) + 1);
     }
     const daily = [];

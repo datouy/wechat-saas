@@ -34,14 +34,16 @@ class GroupBuyManager {
       new Date(now.getTime() + (Number(data.durationHours) || this.config.autoCloseHours) * 3600000);
     if (isNaN(endAt.getTime())) throw business('活动截止时间无效');
 
+    const minParticipants = Math.max(2, Number(data.minParticipants) || this.config.minParticipants);
+    const maxParticipants = Math.max(minParticipants, Number(data.maxParticipants) || 100);
     const gb = {
       id: uuidv4(),
       tenantId,
       productId: product.id,
       title: String(data.title || product.name + '团购').slice(0, 50),
       groupPrice,
-      minParticipants: Math.max(2, Number(data.minParticipants) || this.config.minParticipants),
-      maxParticipants: Number(data.maxParticipants) || 100,
+      minParticipants,
+      maxParticipants,
       status: 'active', // active / success / closed / cancelled
       participants: [], // [{memberId, role:'leader'|'member', joinedAt}]
       startAt: now.toISOString(),

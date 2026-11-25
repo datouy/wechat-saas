@@ -205,6 +205,17 @@ async function expectReject(fn, message) {
     assert(grouped.items[0].unitPrice === 1500);
     await om.cancel(grouped.id, member.id, '测试清理');
   });
+  await test('团购人数上限不小于成团人数', async () => {
+    const gb2 = await gbm.create(tenant, { productId: product.id, groupPrice: 12, minParticipants: 3, maxParticipants: 1 });
+    assert(gb2.maxParticipants >= gb2.minParticipants, '人数上限应被修正为不小于成团人数');
+    const a = await mm.loginByWechatCode('gb-a-' + Date.now(), tenant);
+    const b = await mm.loginByWechatCode('gb-b-' + Date.now(), tenant);
+    const c = await mm.loginByWechatCode('gb-c-' + Date.now(), tenant);
+    await gbm.join(gb2.id, a.id);
+    await gbm.join(gb2.id, b.id);
+    const joined = await gbm.join(gb2.id, c.id);
+    assert(joined.status === 'success', '三人参团应能成团');
+  });
 
   console.log('[6] 问卷');
   const form = await fm.create(tenant, {

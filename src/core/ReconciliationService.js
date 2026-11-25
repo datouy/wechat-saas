@@ -5,6 +5,7 @@
  * 金额统一以“分”（整数）存储与比较。
  */
 const { business } = require('../errors');
+const { cnDate } = require('./time');
 
 // 微信支付 v3 交易对账单表头（列名与顺序，供解析与 mock 复用）
 const BILL_HEADER = '交易时间,公众账号ID,商户号,特约商户号,设备号,微信订单号,商户订单号,用户标识,交易类型,交易状态,付款银行,货币种类,应结订单金额,代金券金额,微信退款单号,商户退款单号,退款金额,充值券退款金额,退款类型,退款状态,商品名称,商户数据包,手续费,费率,订单金额,申请退款金额,费率备注';
@@ -46,7 +47,7 @@ class ReconciliationService {
     }
 
     // 本地已支付订单中，支付日期与对账日一致但账单缺失的（可能账单延迟，也可能是漏单）
-    const paidLocal = await this.store.find('orders', o => o.paidAt && o.paidAt.slice(0, 10) === d && (!tenantId || o.tenantId === tenantId));
+    const paidLocal = await this.store.find('orders', o => o.paidAt && cnDate(new Date(o.paidAt)) === d && (!tenantId || o.tenantId === tenantId));
     const billOrderNos = new Set(payments.map(p => p.orderNo));
     const missingInBill = paidLocal
       .filter(o => !billOrderNos.has(o.orderNo))
