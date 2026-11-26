@@ -5,8 +5,19 @@
 ## 当前架构
 
 - `backend/`：Java 21 + Spring Boot 3 + MySQL 8 + Flyway
-- `admin-web/`：Vue 3 + Vite + TypeScript + Pinia + Element Plus
+- `admin/`：Vue 3 + Vite + TypeScript + Pinia + Element Plus
 - `mobile/`：uni-app + Vue 3（H5 / 微信小程序 / App）
+- `sql/`：MySQL 完整建表与迁移参考
+
+```text
+wechat-saas/
+├── backend/             Java 21 + Spring Boot 3 + MySQL
+├── admin/               Vue 3 后台管理端
+├── mobile/              uni-app 移动端
+├── sql/                 MySQL 建表与迁移 SQL
+├── docker-compose.yml   本地编排
+└── README.md
+```
 
 ## 本地启动
 
@@ -45,7 +56,7 @@ mvn spring-boot:run
 ### 3. 启动 Vue3 管理台
 
 ```powershell
-cd admin-web
+cd admin
 npm install
 npm run dev
 ```
@@ -74,6 +85,7 @@ npm run build:mp-weixin
 ## 数据库文件
 
 - 数据库结构统一提交在 backend/src/main/resources/db/migration/ 下的 V1、V2、V3 SQL 文件中。
+- 仓库根目录 sql/wechat-saas.sql 提供合并后的完整建表脚本，便于查看和手工导入。
 - Spring Boot 启动时由 Flyway 自动执行迁移，不需要手工导入 SQL。
 - 不提交 MySQL 数据目录、.ibd、binlog、账号口令等本地运行文件；这些文件与机器绑定并可能包含敏感数据。
 - 开发演示数据由 DataBootstrap 在空库首次启动时生成。
@@ -129,11 +141,8 @@ docker compose up --build
 ## 验证
 
 ```powershell
-npm test
-
-# 或分端执行
 cd backend; mvn test
-cd admin-web; npm run check
+cd admin; npm run check
 cd mobile; npm run build:h5; npm run build:mp-weixin
 ```
 

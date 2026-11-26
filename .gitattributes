@@ -1,0 +1,7 @@
+* text=auto
+backend/**/*.java linguist-language=Java
+admin/src/**/*.vue linguist-language=Vue
+admin/src/**/*.ts linguist-language=TypeScript
+mobile/**/*.vue linguist-language=Vue
+**/package-lock.json linguist-generated=true
+

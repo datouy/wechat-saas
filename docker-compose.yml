@@ -33,7 +33,7 @@ services:
       - "8080:8080"
 
   admin:
-    build: ./admin-web
+    build: ./admin
     restart: unless-stopped
     depends_on:
       - backend
