@@ -1,4 +1,0 @@
-.field { padding:16rpx 0; border-bottom:1rpx solid #f3f4f6; }
-.label { font-weight:600; margin-bottom:12rpx; }
-.choice { display:flex; align-items:center; gap:12rpx; padding:10rpx 0; }
-.rating { display:flex; gap:12rpx; font-size:40rpx; }

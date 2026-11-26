@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540">
-<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f8edd2"/><stop offset="1" stop-color="#e7c990"/></linearGradient><linearGradient id="e" x1=".2" y1=".1" x2=".8" y2=".9"><stop stop-color="#fffdf2"/><stop offset=".7" stop-color="#f4dfb8"/><stop offset="1" stop-color="#d8b474"/></linearGradient></defs>
-<rect width="720" height="540" rx="40" fill="url(#b)"/><circle cx="96" cy="86" r="140" fill="#fff" opacity=".28"/><path d="M462 108c75 43 98 112 70 208H370c-13-101 18-169 92-208Z" fill="#a1844e" opacity=".18"/>
-<g transform="translate(112 65)"><ellipse cx="160" cy="224" rx="120" ry="158" fill="url(#e)"/><ellipse cx="358" cy="224" rx="120" ry="158" fill="url(#e)"/><ellipse cx="258" cy="194" rx="120" ry="158" fill="url(#e)"/><path d="M208 101c31 18 49 42 52 72" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" opacity=".56"/></g>
-<path d="M150 426h430" stroke="#a4854f" stroke-width="2" opacity=".25"/><text x="44" y="494" fill="#71532d" font-family="sans-serif" font-size="34" font-weight="700">散养土鸡蛋</text>
-</svg>

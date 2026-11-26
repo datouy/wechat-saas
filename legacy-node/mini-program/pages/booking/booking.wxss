@@ -1,3 +1,0 @@
-.slot { display:inline-block; padding:16rpx 28rpx; border:1rpx solid #e5e7eb; border-radius:12rpx; margin:8rpx; }
-.slot.on { background:#faf0eb; border-color:#b84a35; color:#9b3c2b; }
-.slot.full { color:#d1d5db; border-color:#f3f4f6; }

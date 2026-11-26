@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540">
-<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f2e8cb"/><stop offset="1" stop-color="#d6bd81"/></linearGradient><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff9e9"/><stop offset="1" stop-color="#e8d6a8"/></linearGradient></defs>
-<rect width="720" height="540" rx="40" fill="url(#b)"/><circle cx="622" cy="70" r="150" fill="#fff" opacity=".21"/><g transform="translate(112 55)"><path d="M72 38h360l48 70v308c0 38-23 58-62 58H76c-38 0-60-21-60-58V108Z" fill="#e3d0a2"/><path d="M75 0h352l76 108H34Z" fill="#6f8050"/><path d="M97 143h309v242H97Z" fill="none" stroke="#7a6640" stroke-width="5" opacity=".5"/><path d="M145 371c48-86 146-142 251-125-55 96-145 150-251 125Z" fill="#9b8e4f" opacity=".42"/><text x="143" y="212" fill="#55472e" font-family="serif" font-size="56" font-weight="700">五常大米</text><text x="153" y="259" fill="#77684c" font-family="sans-serif" font-size="22">当季新米 · 10斤装</text></g>
-<text x="44" y="494" fill="#5c4d30" font-family="sans-serif" font-size="34" font-weight="700">东北五常大米</text>
-</svg>

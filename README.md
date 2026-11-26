@@ -7,9 +7,6 @@
 - `backend/`：Java 21 + Spring Boot 3 + MySQL 8 + Flyway
 - `admin-web/`：Vue 3 + Vite + TypeScript + Pinia + Element Plus
 - `mobile/`：uni-app + Vue 3（H5 / 微信小程序 / App）
-- `legacy-node/`：旧 Node/Express + 静态 HTML 工程，仅作迁移参考
-
-旧 Node/Express + 静态 HTML 代码已移入 legacy-node/，仅作迁移参考，不再作为新功能交付入口。
 
 ## 本地启动
 
@@ -74,6 +71,13 @@ npm run build:mp-weixin
 
 产物目录：`mobile/dist/build/mp-weixin`，用微信开发者工具导入。
 
+## 数据库文件
+
+- 数据库结构统一提交在 backend/src/main/resources/db/migration/ 下的 V1、V2、V3 SQL 文件中。
+- Spring Boot 启动时由 Flyway 自动执行迁移，不需要手工导入 SQL。
+- 不提交 MySQL 数据目录、.ibd、binlog、账号口令等本地运行文件；这些文件与机器绑定并可能包含敏感数据。
+- 开发演示数据由 DataBootstrap 在空库首次启动时生成。
+
 ## 微信配置
 
 生产环境需要配置以下变量，真实支付和订阅消息仍需微信商户与模板资质完成外部验收：
@@ -135,7 +139,7 @@ cd mobile; npm run build:h5; npm run build:mp-weixin
 
 当前验证基线：
 
-- Java 后端：4/4 测试通过（登录/权限 + 商品/库存/订单/退款/积分/审计 + 优惠券/团购/问卷/预约/微信闭环）
+- Java 后端：编译与运行验收通过（仓库不保留 tests 目录）
 - Vue 管理台：typecheck + production build 通过
 - uni-app：H5 与微信小程序构建通过
 

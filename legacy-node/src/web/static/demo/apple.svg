@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540">
-<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5dfc8"/><stop offset="1" stop-color="#e9b28d"/></linearGradient><radialGradient id="a" cx=".34" cy=".3"><stop stop-color="#ff8268"/><stop offset=".72" stop-color="#d83f36"/><stop offset="1" stop-color="#a51d27"/></radialGradient></defs>
-<rect width="720" height="540" rx="40" fill="url(#b)"/><circle cx="606" cy="98" r="130" fill="#fff" opacity=".24"/><path d="M148 408c-1-94 42-166 127-201 42 44 72 95 86 156-45 74-115 111-213 45Z" fill="#496b3a" opacity=".16"/>
-<g transform="translate(170 102)"><path d="M189 93c-12-36 4-69 46-82 12 39-2 68-46 82Z" fill="#44653b"/><path d="M189 91c-5-35-30-55-70-58 3 40 29 61 70 58Z" fill="#5e7d47"/><path d="M192 92c78-36 157 6 180 91 26 96-42 204-136 220C143 414 54 323 70 225 82 152 137 94 192 92Z" fill="url(#a)"/><path d="M130 163c25-26 58-31 86-20" fill="none" stroke="#fff" stroke-opacity=".36" stroke-width="18" stroke-linecap="round"/></g>
-<text x="44" y="494" fill="#703d27" font-family="sans-serif" font-size="34" font-weight="700">山东红富士</text>
-</svg>
