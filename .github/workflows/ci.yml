@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  backend:
+  wcs-admin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,11 +15,10 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - name: Backend tests
-        working-directory: backend
+      - name: Build Java modules
         run: mvn -B test
 
-  admin:
+  wcs-ui:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,15 +26,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: admin/package-lock.json
+          cache-dependency-path: wcs-ui/package-lock.json
       - name: Install admin dependencies
-        working-directory: admin
+        working-directory: wcs-ui
         run: npm ci
       - name: Typecheck and build admin
-        working-directory: admin
+        working-directory: wcs-ui
         run: npm run check
 
-  mobile:
+  wcs-mobile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,14 +42,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: wcs-mobile/package-lock.json
       - name: Install mobile dependencies
-        working-directory: mobile
+        working-directory: wcs-mobile
         run: npm ci
       - name: Build H5
-        working-directory: mobile
+        working-directory: wcs-mobile
         run: npm run build:h5
       - name: Build WeChat mini program
-        working-directory: mobile
+        working-directory: wcs-mobile
         run: npm run build:mp-weixin
 

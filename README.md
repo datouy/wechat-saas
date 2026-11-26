@@ -4,18 +4,31 @@
 
 ## 当前架构
 
-- `backend/`：Java 21 + Spring Boot 3 + MySQL 8 + Flyway
-- `admin/`：Vue 3 + Vite + TypeScript + Pinia + Element Plus
-- `mobile/`：uni-app + Vue 3（H5 / 微信小程序 / App）
+- wcs-admin/：Spring Boot 启动入口
+- wcs-common/：通用响应与异常
+- wcs-framework/：安全、JWT 与基础配置
+- wcs-system/：租户、账号、会员、审计
+- wcs-commerce/：商品、订单、优惠券
+- wcs-engagement/：团购、问卷、预约
+- wcs-wechat/：微信登录、支付、订阅消息
+- wcs-ui/：Vue 3 + Vite + TypeScript + Pinia + Element Plus
+- wcs-mobile/：uni-app + Vue 3（H5 / 微信小程序 / App）
 - `sql/`：MySQL 完整建表与迁移参考
 
 ```text
 wechat-saas/
-├── backend/             Java 21 + Spring Boot 3 + MySQL
-├── admin/               Vue 3 后台管理端
-├── mobile/              uni-app 移动端
+├── wcs-common/          通用响应与异常
+├── wcs-framework/       安全、JWT 与基础配置
+├── wcs-system/          租户、账号、会员、审计
+├── wcs-commerce/        商品、订单、优惠券
+├── wcs-engagement/      团购、问卷、预约
+├── wcs-wechat/          微信登录、支付、订阅消息
+├── wcs-admin/           Spring Boot 启动入口
+├── wcs-ui/              Vue 3 后台管理端
+├── wcs-mobile/          uni-app 移动端
 ├── sql/                 MySQL 建表与迁移 SQL
 ├── docker-compose.yml   本地编排
+├── pom.xml              Maven 多模块父工程
 └── README.md
 ```
 
@@ -43,8 +56,8 @@ $env:APP_JWT_SECRET="至少32字节的随机密钥"
 ### 2. 启动 Java 后端
 
 ```powershell
-cd backend
-mvn spring-boot:run
+mvn -DskipTests package
+java -jar wcs-admin/target/wcs-admin.jar
 ```
 
 - API：http://127.0.0.1:8080
@@ -56,7 +69,7 @@ mvn spring-boot:run
 ### 3. 启动 Vue3 管理台
 
 ```powershell
-cd admin
+cd wcs-ui
 npm install
 npm run dev
 ```
@@ -66,7 +79,7 @@ npm run dev
 ### 4. 启动 uni-app 移动端
 
 ```powershell
-cd mobile
+cd wcs-mobile
 npm install
 npm run dev:h5
 ```
@@ -76,15 +89,15 @@ H5 地址：http://127.0.0.1:5174
 微信小程序构建：
 
 ```powershell
-cd mobile
+cd wcs-mobile
 npm run build:mp-weixin
 ```
 
-产物目录：`mobile/dist/build/mp-weixin`，用微信开发者工具导入。
+产物目录：`wcs-mobile/dist/build/mp-weixin`，用微信开发者工具导入。
 
 ## 数据库文件
 
-- 数据库结构统一提交在 backend/src/main/resources/db/migration/ 下的 V1、V2、V3 SQL 文件中。
+- 数据库结构统一提交在 wcs-admin/src/main/resources/db/migration/ 下的 V1、V2、V3 SQL 文件中。
 - 仓库根目录 sql/wechat-saas.sql 提供合并后的完整建表脚本，便于查看和手工导入。
 - Spring Boot 启动时由 Flyway 自动执行迁移，不需要手工导入 SQL。
 - 不提交 MySQL 数据目录、.ibd、binlog、账号口令等本地运行文件；这些文件与机器绑定并可能包含敏感数据。
@@ -141,9 +154,9 @@ docker compose up --build
 ## 验证
 
 ```powershell
-cd backend; mvn test
-cd admin; npm run check
-cd mobile; npm run build:h5; npm run build:mp-weixin
+mvn test
+cd wcs-ui; npm run check
+cd wcs-mobile; npm run build:h5; npm run build:mp-weixin
 ```
 
 当前验证基线：

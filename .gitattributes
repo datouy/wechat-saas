@@ -1,7 +1,7 @@
 * text=auto
-backend/**/*.java linguist-language=Java
-admin/src/**/*.vue linguist-language=Vue
-admin/src/**/*.ts linguist-language=TypeScript
-mobile/**/*.vue linguist-language=Vue
+wcs-*/src/**/*.java linguist-language=Java
+wcs-ui/src/**/*.vue linguist-language=Vue
+wcs-ui/src/**/*.ts linguist-language=TypeScript
+wcs-mobile/**/*.vue linguist-language=Vue
 **/package-lock.json linguist-generated=true
 

@@ -1,8 +1,8 @@
 node_modules
 **/node_modules
-admin/dist
-mobile/dist
-backend/target
+wcs-ui/dist
+wcs-mobile/dist
+**/target
 .env
 .env.*
 logs

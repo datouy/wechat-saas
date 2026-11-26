@@ -17,8 +17,10 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
-    build: ./backend
+  wcs-admin:
+    build:
+      context: .
+      dockerfile: wcs-admin/Dockerfile
     restart: unless-stopped
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/wechat_saas?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
@@ -32,11 +34,11 @@ services:
     ports:
       - "8080:8080"
 
-  admin:
-    build: ./admin
+  wcs-ui:
+    build: ./wcs-ui
     restart: unless-stopped
     depends_on:
-      - backend
+      - wcs-admin
     ports:
       - "5173:80"
 

@@ -1,6 +1,6 @@
 -- 邻里团 SaaS MySQL 完整建表脚本
 -- 由 Flyway V1-V3 汇总生成，便于查看和手工建库。
--- 正式启动仍以 backend/src/main/resources/db/migration 下的迁移文件为准。
+-- 正式启动仍以 wcs-admin/src/main/resources/db/migration 下的迁移文件为准。
 
 -- V1__init.sql
 CREATE TABLE saas_tenants (
