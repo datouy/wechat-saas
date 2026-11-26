@@ -98,10 +98,18 @@ npm run build:mp-weixin
 ## 数据库文件
 
 - 数据库结构统一提交在 wcs-admin/src/main/resources/db/migration/ 下的 V1、V2、V3 SQL 文件中。
-- 仓库根目录 sql/wechat-saas.sql 提供合并后的完整建表脚本，便于查看和手工导入。
+- 仓库根目录 sql/wechat-saas.sql 是当前 MySQL 数据库的完整 mysqldump 导出，包含建库、表结构和业务数据。
 - Spring Boot 启动时由 Flyway 自动执行迁移，不需要手工导入 SQL。
 - 不提交 MySQL 数据目录、.ibd、binlog、账号口令等本地运行文件；这些文件与机器绑定并可能包含敏感数据。
 - 开发演示数据由 DataBootstrap 在空库首次启动时生成。
+
+导入到 MySQL：
+
+```powershell
+Get-Content .\sql\wechat-saas.sql | mysql --host=127.0.0.1 --user=root -p
+```
+
+导入脚本包含 DROP TABLE/CREATE TABLE/INSERT，请先确认目标数据库可以覆盖，或先备份。
 
 ## 微信配置
 
