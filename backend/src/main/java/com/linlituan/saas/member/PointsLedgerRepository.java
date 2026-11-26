@@ -1,0 +1,10 @@
+package com.linlituan.saas.member;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface PointsLedgerRepository extends JpaRepository<PointsLedgerEntry, Long> {
+    List<PointsLedgerEntry> findTop50ByTenantIdAndMemberIdOrderByCreatedAtDesc(Long tenantId, Long memberId);
+}
+

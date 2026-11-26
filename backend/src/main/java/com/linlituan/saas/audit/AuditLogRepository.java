@@ -1,0 +1,11 @@
+package com.linlituan.saas.audit;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
+    Page<AuditLog> findByTenantIdOrderByCreatedAtDesc(Long tenantId, Pageable pageable);
+    Page<AuditLog> findByTenantIdAndActionOrderByCreatedAtDesc(Long tenantId, String action, Pageable pageable);
+}
+

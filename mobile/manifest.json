@@ -1,0 +1,30 @@
+{
+  "name": "邻里团",
+  "appid": "__UNI__WECHATSAAS",
+  "description": "邻里团社区小程序 SaaS 顾客端",
+  "versionName": "2.0.0",
+  "versionCode": "200",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3
+  },
+  "h5": {
+    "title": "邻里团",
+    "router": {
+      "mode": "hash"
+    }
+  },
+  "mp-weixin": {
+    "appid": "touristappid",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true
+  },
+  "vueVersion": "3"
+}
+

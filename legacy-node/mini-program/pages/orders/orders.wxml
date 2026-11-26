@@ -1,0 +1,129 @@
+<view class="container orders-page">
+  <view class="page-heading">
+    <text class="eyebrow">履约进度</text>
+    <text class="page-title">每一单，都有清楚的下一步</text>
+  </view>
+
+  <view class="card order-card" wx:for="{{orders}}" wx:key="id" bindtap="openOrderDetail" data-id="{{item.id}}">
+    <view class="order-head">
+      <view>
+        <view class="order-no">{{item.orderNo}}</view>
+        <view class="order-time">{{item.createdAtText}} · {{item.deliveryText}}</view>
+      </view>
+      <text class="status-pill status-{{item.status}}">{{item.statusText}}</text>
+    </view>
+    <view class="order-items">{{item.itemsText}}</view>
+    <view wx:if="{{item.statusHint}}" class="status-hint">{{item.statusHint}}</view>
+    <view class="order-foot">
+      <view>
+        <text class="amount-label">实付</text>
+        <text class="price">¥{{item.payAmountYuan}}</text>
+      </view>
+      <view class="order-actions">
+        <button wx:if="{{item.status==='pending' && item.paymentMode!=='offline'}}" class="btn-primary btn-small" size="mini" catchtap="pay" data-id="{{item.id}}">去支付</button>
+        <text wx:if="{{item.status==='pending' && item.paymentMode==='offline'}}" class="status-hint">等待商家确认收款</text>
+        <button wx:if="{{item.status==='delivering'}}" class="btn-ghost btn-small" size="mini" catchtap="complete" data-id="{{item.id}}">确认收货</button>
+        <button class="btn-text btn-small" size="mini" catchtap="openOrderDetail" data-id="{{item.id}}">查看详情</button>
+      </view>
+    </view>
+  </view>
+  <view wx:if="{{!orders.length}}" class="empty">暂无订单，去首页逛逛吧</view>
+</view>
+
+<view wx:if="{{showDetail && selectedOrder}}" class="sheet-mask" bindtap="closeDetail" catchtouchmove="noop">
+  <view class="detail-sheet" catchtap="noop">
+    <view class="sheet-grip"></view>
+    <view class="detail-head">
+      <view>
+        <text class="eyebrow">订单详情</text>
+        <text class="detail-title">{{selectedOrder.orderNo}}</text>
+        <text class="detail-subtitle">{{selectedOrder.createdAtText}} · {{selectedOrder.deliveryText}}</text>
+      </view>
+      <text class="status-pill status-{{selectedOrder.status}}">{{selectedOrder.statusText}}</text>
+    </view>
+
+    <view class="detail-scroll">
+      <view wx:if="{{selectedOrder.pickupCode}}" class="pickup-ticket">
+        <view>
+          <text>取货码</text>
+          <text class="pickup-code">{{selectedOrder.pickupCode}}</text>
+          <text class="pickup-caption">到店后向店员出示</text>
+        </view>
+        <view class="ticket-rule"></view>
+        <view class="ticket-store">
+          <text>{{selectedOrder.pickupLocationName || '社区服务站'}}</text>
+          <text class="pickup-caption">{{selectedOrder.pickupLocationAddress}}</text>
+        </view>
+      </view>
+
+      <view class="detail-section">
+        <view class="section-label">商品明细</view>
+        <view class="line-item" wx:for="{{selectedOrder.items}}" wx:key="productId">
+          <view>
+            <view class="line-title">{{item.name}}</view>
+            <view class="line-meta">{{item.unit || '份'}} × {{item.quantity}}</view>
+          </view>
+          <text>¥{{item.subtotalText}}</text>
+        </view>
+        <view class="amount-list">
+          <view><text class="amount-key">商品金额</text><text>¥{{selectedOrder.goodsAmountYuan}}</text></view>
+          <view wx:if="{{selectedOrder.couponDiscount}}"><text class="amount-key">优惠券</text><text>-¥{{selectedOrder.couponDiscountYuan}}</text></view>
+          <view wx:if="{{selectedOrder.pointsDiscount}}"><text class="amount-key">积分抵扣</text><text>-¥{{selectedOrder.pointsDiscountYuan}}</text></view>
+          <view wx:if="{{selectedOrder.deliveryFee}}"><text class="amount-key">配送费</text><text>¥{{selectedOrder.deliveryFeeYuan}}</text></view>
+          <view class="amount-total"><text class="amount-key">实付</text><text class="total-amount">¥{{selectedOrder.payAmountYuan}}</text></view>
+        </view>
+      </view>
+
+      <view class="detail-section">
+        <view class="section-label">履约信息</view>
+        <view class="info-row"><text class="info-key">{{selectedOrder.deliveryType === 'pickup' ? '自提门店' : '收货地址'}}</text>
+          <text>{{selectedOrder.deliveryType === 'pickup' ? (selectedOrder.pickupLocationName || '社区服务站') : selectedOrder.addressText}}</text>
+        </view>
+        <view wx:if="{{selectedOrder.logisticsText}}" class="info-row"><text class="info-key">物流</text><text>{{selectedOrder.logisticsText}}</text></view>
+        <view class="info-row"><text class="info-key">收款方式</text><text>{{selectedOrder.paymentMode === 'offline' ? '线下收款' : '微信支付'}}</text></view>
+        <view wx:if="{{selectedOrder.paymentMode === 'offline' && selectedOrder.paymentInstructions}}" class="info-row"><text class="info-key">付款说明</text><text>{{selectedOrder.paymentInstructions}}</text></view>
+        <view wx:if="{{selectedOrder.pickupVerifiedAt}}" class="info-row"><text class="info-key">取货完成</text><text>{{selectedOrder.completedAtText}}</text></view>
+        <view wx:if="{{selectedOrder.refundStatusText}}" class="info-row warning"><text class="info-key">{{selectedOrder.refundStatusText}}</text><text>¥{{selectedOrder.refundedAmountYuan}}</text></view>
+        <view wx:if="{{selectedOrder.remark}}" class="info-row"><text class="info-key">订单备注</text><text>{{selectedOrder.remark}}</text></view>
+      </view>
+
+      <view class="detail-section">
+        <view class="section-label">售后记录</view>
+        <view wx:for="{{selectedOrder.afterSales}}" wx:key="id" class="after-sales-row">
+          <view>
+            <view class="after-sales-title">{{item.typeText}} · {{item.statusText}}</view>
+            <view class="after-sales-meta">{{item.reason}} · {{item.createdAtText}}</view>
+            <text wx:if="{{item.resolution}}" class="resolution">{{item.resolution}}</text>
+          </view>
+          <button wx:if="{{item.status==='pending'}}" class="btn-text btn-small" size="mini" catchtap="cancelAfterSales" data-id="{{item.id}}">撤回</button>
+        </view>
+        <view wx:if="{{!selectedOrder.afterSales.length}}" class="empty-inline">暂无售后申请。支付后如遇缺件、破损或服务问题，可在这里提交。</view>
+      </view>
+
+      <view wx:if="{{showAfterSalesForm}}" class="after-sales-form">
+        <view class="section-label">申请售后</view>
+        <picker range="{{afterSalesTypes}}" range-key="label" value="{{afterSalesTypeIndex}}" bindchange="onAfterSalesType">
+          <view class="picker-field">售后类型<text>{{afterSalesTypeLabel}}</text></view>
+        </picker>
+        <view wx:if="{{afterSalesNeedsAmount}}" class="form-row">
+          <text>退款金额</text>
+          <input type="digit" value="{{afterSalesDraft.amount}}" data-field="amount" bindinput="onAfterSalesInput" placeholder="最多可退 ¥{{selectedOrder.refundableAmountYuan}}"/>
+        </view>
+        <input class="form-input" value="{{afterSalesDraft.reason}}" data-field="reason" bindinput="onAfterSalesInput" maxlength="120" placeholder="问题原因，例如商品破损"/>
+        <textarea class="form-textarea" value="{{afterSalesDraft.description}}" data-field="description" bindinput="onAfterSalesInput" maxlength="500" placeholder="补充数量、问题位置或希望的解决方式"></textarea>
+        <view class="form-actions">
+          <button class="btn-ghost btn-small" bindtap="closeAfterSalesForm">取消</button>
+          <button class="btn-primary btn-small" loading="{{submittingAfterSales}}" disabled="{{submittingAfterSales}}" bindtap="submitAfterSales">提交申请</button>
+        </view>
+      </view>
+    </view>
+
+    <view class="detail-footer">
+      <button wx:if="{{selectedOrder.status==='pending'}}" class="btn-ghost" catchtap="cancelOrder" data-id="{{selectedOrder.id}}">取消订单</button>
+      <button wx:if="{{selectedOrder.status==='pending' && selectedOrder.paymentMode!=='offline'}}" class="btn-primary" catchtap="pay" data-id="{{selectedOrder.id}}">继续支付</button>
+      <button wx:if="{{selectedOrder.status==='delivering'}}" class="btn-primary" catchtap="complete" data-id="{{selectedOrder.id}}">确认收货</button>
+      <button wx:if="{{selectedOrder.canRequestAfterSales && !showAfterSalesForm}}" class="btn-primary" bindtap="openAfterSalesForm">申请售后</button>
+      <button wx:if="{{!selectedOrder.canRequestAfterSales && !selectedOrder.activeAfterSales && selectedOrder.status!=='pending' && selectedOrder.status!=='delivering'}}" class="btn-ghost" bindtap="closeDetail">关闭</button>
+    </view>
+  </view>
+</view>

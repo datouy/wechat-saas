@@ -1,51 +1,13 @@
 {
   "name": "wechat-saas",
-  "version": "1.0.0",
-  "description": "邻里团 - 微信生态小程序SaaS（社区团购/会员积分/预约/表单）",
-  "main": "src/index.js",
+  "version": "2.0.0",
+  "private": true,
+  "description": "邻里团 SaaS：Spring Boot + MySQL + Vue 3 + uni-app",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "node tests/run.js",
-    "test:http": "node tests/http-auth.js",
-    "test:pay": "node tests/wechatpay-v3.js",
-    "test:validation": "node tests/http-validation.js",
-    "test:tenant": "node tests/http-tenant.js",
-    "test:sqlite": "node tests/run-sqlite.js",
-    "test:concurrency": "node tests/concurrency-oversell.js",
-    "test:reconciliation": "node tests/reconciliation.js",
-    "test:enterprise": "node tests/enterprise-runtime.js",
-    "test:postgres": "node tests/postgres-runtime.js",
-    "test:s3-archive": "node tests/s3-archive-mock.js",
-    "test:all": "npm test && npm run test:http && npm run test:pay && npm run test:validation && npm run test:tenant && npm run test:sqlite && npm run test:concurrency && npm run test:reconciliation && npm run test:s3-archive && npm run test:enterprise && npm run test:postgres",
-    "db:migrate": "node scripts/migrate.js",
-    "db:status": "node scripts/migrate.js --status",
-    "backup": "node scripts/backup.js",
-    "restore": "node scripts/restore.js",
-    "dr:drill": "node scripts/dr-drill.js",
-    "dr:drill:all": "node scripts/dr-drill-all.js"
-  },
-  "keywords": [
-    "wechat",
-    "miniprogram",
-    "saas",
-    "community-group-buying",
-    "points"
-  ],
-  "author": "Dtou",
-  "license": "MIT",
-  "dependencies": {
-    "dotenv": "^18.0.10",
-    "express": "^4.18.2",
-    "express-rate-limit": "^8.7.5",
-    "helmet": "^8.3.0",
-    "pg": "^8.23.1",
-    "zod": "^4.6.7"
-  },
-  "engines": {
-    "node": ">=22.5.0"
-  },
-  "devDependencies": {
-    "embedded-postgres": "^17.12.0-beta.19"
+    "backend:test": "mvn -f backend/pom.xml test",
+    "admin:check": "npm --prefix admin-web run check",
+    "mobile:build": "npm --prefix mobile run build:h5 && npm --prefix mobile run build:mp-weixin",
+    "test": "npm run backend:test && npm run admin:check && npm run mobile:build"
   }
 }
+
